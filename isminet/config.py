@@ -10,13 +10,18 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class APIVersion(str, Enum):
     """UniFi Network API versions."""
+
     V1 = "v1"
     V2 = "v2"
 
     @property
     def path(self) -> str:
         """Get API path for version."""
-        return f"/proxy/network/{self.value}" if self == APIVersion.V1 else "/proxy/network/api/s"
+        return (
+            f"/proxy/network/{self.value}"
+            if self == APIVersion.V1
+            else "/proxy/network/api/s"
+        )
 
 
 class APIConfig(BaseSettings):
@@ -34,28 +39,16 @@ class APIConfig(BaseSettings):
 
     # Optional settings with defaults
     host: str = Field(
-        default="192.168.1.1",
-        description="UniFi Network controller hostname/IP"
+        default="192.168.1.1", description="UniFi Network controller hostname/IP"
     )
-    port: int = Field(
-        default=443,
-        description="UniFi Network controller port"
-    )
+    port: int = Field(default=443, description="UniFi Network controller port")
     verify_ssl: bool = Field(
-        default=False,
-        description="Whether to verify SSL certificates"
+        default=False, description="Whether to verify SSL certificates"
     )
-    timeout: int = Field(
-        default=10,
-        description="API request timeout in seconds"
-    )
-    site: str = Field(
-        default="default",
-        description="UniFi Network site name"
-    )
+    timeout: int = Field(default=10, description="API request timeout in seconds")
+    site: str = Field(default="default", description="UniFi Network site name")
     api_version: APIVersion = Field(
-        default=APIVersion.V1,
-        description="UniFi Network API version"
+        default=APIVersion.V1, description="UniFi Network API version"
     )
 
     @field_validator("host")

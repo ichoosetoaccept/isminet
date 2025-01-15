@@ -1,14 +1,30 @@
 [project]
 name = "isminet"
 version = "0.1.0"
-description = "Add your description here"
+requires-python = ">=3.12"
+description = "UniFi Network API client"
 readme = "README.md"
-requires-python = ">=3.13"
+license = {text = "MIT"}
+authors = [
+    {name = "Ismar Iljazovic"},
+]
 dependencies = [
-    "pre-commit>=4.0.1",
-    "pydantic>=2.10.5",
-    "pydantic-settings>=2.7.1",
-    "python-dotenv>=1.0.1",
     "requests>=2.32.3",
+    "python-dotenv>=1.0.1",
+    "pydantic>=2.10.5",
     "rich>=13.9.4",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+pythonpath = ["."]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.4",
+    "pytest-cov>=6.0.0",
+    "pre-commit>=4.0.1",
+    "pydantic-settings>=2.7.1",
+    "ruff>=0.9.1",
 ]

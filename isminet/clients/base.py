@@ -24,6 +24,7 @@ def with_retry(max_retries: int = 3, backoff_factor: float = 0.5):
         max_retries: Maximum number of retry attempts
         backoff_factor: Delay multiplier between retries
     """
+
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -35,15 +36,20 @@ def with_retry(max_retries: int = 3, backoff_factor: float = 0.5):
                     last_error = e
                     if attempt == max_retries:
                         break
-                    delay = backoff_factor * (2 ** attempt)
+                    delay = backoff_factor * (2**attempt)
                     logger.warning(
                         "Request failed (attempt %d/%d). Retrying in %.1f seconds...",
-                        attempt + 1, max_retries, delay
+                        attempt + 1,
+                        max_retries,
+                        delay,
                     )
                     import time
+
                     time.sleep(delay)
             raise last_error
+
         return wrapper
+
     return decorator
 
 
@@ -84,6 +90,7 @@ class BaseAPIClient:
         if not self.config.verify_ssl:
             # Disable SSL warning if verification is disabled
             import urllib3
+
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
         return session
