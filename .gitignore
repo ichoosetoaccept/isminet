@@ -13,3 +13,12 @@ wheels/
 .idea/
 .vscode/
 .coverage
+
+# Sensitive data
+.env
+docs/api_responses/
+*.log
+
+# Test coverage
+htmlcov/
+.coverage.*
