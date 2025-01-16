@@ -150,7 +150,8 @@ def test_network_configuration() -> None:
     assert config.name == "Main Network"
     assert config.purpose == "corporate"
     assert config.subnet == "192.168.1.0"
-    assert config.vlans is not None and isinstance(config.vlans[0], VLANConfiguration)
+    assert config.vlans is not None, "VLAN list should not be None"
+    assert isinstance(config.vlans[0], VLANConfiguration), "First VLAN should be a VLANConfiguration instance"
     assert isinstance(config.dhcp, DHCPConfiguration)
 
     # Test invalid purpose
