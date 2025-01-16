@@ -16,6 +16,40 @@ class UnifiBaseModel(BaseModel):
     )
 
 
+class ValidationMixin(UnifiBaseModel):
+    """Common validation patterns."""
+
+    @classmethod
+    def validate_range(
+        cls, v: Optional[int], min_val: int, max_val: int, field_name: str
+    ) -> Optional[int]:
+        """Validate integer is within range."""
+        if v is not None and not min_val <= v <= max_val:
+            raise ValueError(f"{field_name} must be between {min_val} and {max_val}")
+        return v
+
+    @classmethod
+    def validate_non_negative(cls, v: Optional[int]) -> Optional[int]:
+        """Validate integer is non-negative."""
+        if v is not None and v < 0:
+            raise ValueError("Value must be non-negative")
+        return v
+
+    @classmethod
+    def validate_percentage(cls, v: Optional[float]) -> Optional[float]:
+        """Validate value is a valid percentage (0-100)."""
+        if v is not None and not 0 <= v <= 100:
+            raise ValueError("Percentage must be between 0 and 100")
+        return v
+
+    @classmethod
+    def validate_negative(cls, v: Optional[int]) -> Optional[int]:
+        """Validate integer is negative."""
+        if v is not None and v >= 0:
+            raise ValueError("Value must be negative")
+        return v
+
+
 class Meta(UnifiBaseModel):
     """Response metadata from the UniFi API."""
 
@@ -163,3 +197,105 @@ class TimestampMixin(UnifiBaseModel):
             if v < info.data["assoc_time"]:
                 raise ValueError("latest_assoc_time must be after assoc_time")
         return v
+
+
+class PoEMixin(UnifiBaseModel):
+    """Common PoE-related fields."""
+
+    port_poe: Optional[bool] = Field(None, description="Whether port supports PoE")
+    poe_power: Optional[str] = Field(None, description="PoE power consumption")
+    poe_mode: Optional[str] = Field(None, description="PoE mode")
+    poe_enable: Optional[bool] = Field(None, description="PoE enabled")
+    poe_caps: Optional[int] = Field(None, description="PoE capabilities")
+
+
+class SFPMixin(UnifiBaseModel):
+    """Common SFP module-related fields."""
+
+    sfp_vendor: Optional[str] = Field(None, description="SFP module vendor")
+    sfp_part: Optional[str] = Field(None, description="SFP module part number")
+    sfp_serial: Optional[str] = Field(None, description="SFP module serial number")
+    sfp_temperature: Optional[float] = Field(None, description="SFP module temperature")
+    sfp_voltage: Optional[float] = Field(None, description="SFP module voltage", ge=0)
+    sfp_rxpower: Optional[float] = Field(
+        None, description="SFP module RX power in dBm", le=0
+    )
+    sfp_txpower: Optional[float] = Field(
+        None, description="SFP module TX power in dBm", le=0
+    )
+
+
+class StormControlMixin(UnifiBaseModel):
+    """Common storm control fields."""
+
+    stormctrl_bcast_enabled: Optional[bool] = Field(
+        None, description="Broadcast storm control enabled"
+    )
+    stormctrl_bcast_rate: Optional[int] = Field(
+        None, description="Broadcast storm control rate", ge=0, le=100
+    )
+    stormctrl_mcast_enabled: Optional[bool] = Field(
+        None, description="Multicast storm control enabled"
+    )
+    stormctrl_mcast_rate: Optional[int] = Field(
+        None, description="Multicast storm control rate", ge=0, le=100
+    )
+    stormctrl_ucast_enabled: Optional[bool] = Field(
+        None, description="Unicast storm control enabled"
+    )
+    stormctrl_ucast_rate: Optional[int] = Field(
+        None, description="Unicast storm control rate", ge=0, le=100
+    )
+
+
+class PortConfigMixin(UnifiBaseModel):
+    """Common port configuration fields."""
+
+    autoneg: Optional[bool] = Field(None, description="Auto-negotiation enabled")
+    flowctrl_rx: Optional[bool] = Field(None, description="RX flow control enabled")
+    flowctrl_tx: Optional[bool] = Field(None, description="TX flow control enabled")
+    full_duplex: Optional[bool] = Field(None, description="Full duplex enabled")
+    speed_caps: Optional[int] = Field(None, description="Speed capabilities")
+    op_mode: Optional[str] = Field(None, description="Operation mode")
+    port_security_enabled: Optional[bool] = Field(
+        None, description="Port security enabled"
+    )
+    port_security_mac_address: Optional[List[str]] = Field(
+        None, description="Allowed MAC addresses"
+    )
+    isolation: Optional[bool] = Field(None, description="Port isolation enabled")
+
+
+class DeviceIdentificationMixin(UnifiBaseModel):
+    """Common device identification fields."""
+
+    model: Optional[str] = Field(None, description="Device model")
+    oui: Optional[str] = Field(None, description="Organizationally Unique Identifier")
+    dev_cat: Optional[int] = Field(None, description="Device category")
+    dev_family: Optional[int] = Field(None, description="Device family")
+    dev_vendor: Optional[int] = Field(None, description="Device vendor")
+    os_name: Optional[int] = Field(None, description="Operating system")
+    os_class: Optional[int] = Field(None, description="Operating system class")
+    fingerprint_source: Optional[int] = Field(
+        None, description="Device fingerprint source"
+    )
+    fingerprint_engine_version: Optional[str] = Field(
+        None, description="Device fingerprint engine version"
+    )
+    confidence: Optional[int] = Field(
+        None, description="Device identification confidence", ge=0, le=100
+    )
+    manufacturer_id: Optional[int] = Field(None, description="Manufacturer ID")
+    board_rev: Optional[int] = Field(None, description="Board revision")
+    architecture: Optional[str] = Field(None, description="Device architecture")
+    kernel_version: Optional[str] = Field(None, description="Device kernel version")
+
+
+class VersionMixin(UnifiBaseModel):
+    """Common version-related fields."""
+
+    version: Optional[str] = Field(None, description="Version string")
+    required_version: Optional[str] = Field(None, description="Required version string")
+    cfgversion: Optional[str] = Field(None, description="Configuration version")
+    model_in_lts: Optional[bool] = Field(None, description="Whether model is in LTS")
+    model_in_eol: Optional[bool] = Field(None, description="Whether model is EOL")

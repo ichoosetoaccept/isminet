@@ -12,6 +12,13 @@ from .base import (
     SystemStatsMixin,
     WifiMixin,
     TimestampMixin,
+    PoEMixin,
+    SFPMixin,
+    StormControlMixin,
+    PortConfigMixin,
+    ValidationMixin,
+    DeviceIdentificationMixin,
+    VersionMixin,
 )
 from .validators import (
     validate_mac,
@@ -65,13 +72,21 @@ class LedOverride(str, Enum):
     DEFAULT = "default"
 
 
-class PortStats(StatisticsMixin, NetworkMixin, UnifiBaseModel):
+class PortStats(
+    StatisticsMixin,
+    NetworkMixin,
+    PoEMixin,
+    SFPMixin,
+    StormControlMixin,
+    PortConfigMixin,
+    ValidationMixin,
+    UnifiBaseModel,
+):
     """Port statistics and configuration."""
 
     port_idx: int = Field(description="Port index", ge=1)
     name: str = Field(description="Port name")
     media: str = Field(description="Port media type (GE, SFP+)")
-    port_poe: bool = Field(description="Whether port supports PoE")
     speed: int = Field(description="Current port speed", ge=0)
     up: bool = Field(description="Whether port is up")
     is_uplink: bool = Field(description="Whether port is an uplink")
@@ -79,57 +94,11 @@ class PortStats(StatisticsMixin, NetworkMixin, UnifiBaseModel):
     rx_errors: int = Field(description="Total receive errors", ge=0)
     tx_errors: int = Field(description="Total transmit errors", ge=0)
     type: str = Field(description="Port type")
-    poe_power: Optional[str] = Field(None, description="PoE power consumption")
     ip: Optional[str] = Field(None, description="IP address")
-    sfp_vendor: Optional[str] = Field(None, description="SFP module vendor")
-    sfp_part: Optional[str] = Field(None, description="SFP module part number")
-    sfp_serial: Optional[str] = Field(None, description="SFP module serial number")
-    sfp_temperature: Optional[float] = Field(None, description="SFP module temperature")
-    sfp_voltage: Optional[float] = Field(None, description="SFP module voltage", ge=0)
-    sfp_rxpower: Optional[float] = Field(
-        None, description="SFP module RX power in dBm", le=0
-    )
-    sfp_txpower: Optional[float] = Field(
-        None, description="SFP module TX power in dBm", le=0
-    )
-    autoneg: Optional[bool] = Field(None, description="Auto-negotiation enabled")
-    flowctrl_rx: Optional[bool] = Field(None, description="RX flow control enabled")
-    flowctrl_tx: Optional[bool] = Field(None, description="TX flow control enabled")
-    full_duplex: Optional[bool] = Field(None, description="Full duplex enabled")
     masked: Optional[bool] = Field(None, description="Whether port is masked")
     aggregated_by: Optional[bool] = Field(
         None, description="Whether port is aggregated"
     )
-    poe_mode: Optional[PoEMode] = Field(None, description="PoE mode")
-    poe_enable: Optional[bool] = Field(None, description="PoE enabled")
-    poe_caps: Optional[int] = Field(None, description="PoE capabilities")
-    speed_caps: Optional[int] = Field(None, description="Speed capabilities")
-    op_mode: Optional[str] = Field(None, description="Operation mode")
-    stormctrl_bcast_enabled: Optional[bool] = Field(
-        None, description="Broadcast storm control enabled"
-    )
-    stormctrl_bcast_rate: Optional[int] = Field(
-        None, description="Broadcast storm control rate", ge=0, le=100
-    )
-    stormctrl_mcast_enabled: Optional[bool] = Field(
-        None, description="Multicast storm control enabled"
-    )
-    stormctrl_mcast_rate: Optional[int] = Field(
-        None, description="Multicast storm control rate", ge=0, le=100
-    )
-    stormctrl_ucast_enabled: Optional[bool] = Field(
-        None, description="Unicast storm control enabled"
-    )
-    stormctrl_ucast_rate: Optional[int] = Field(
-        None, description="Unicast storm control rate", ge=0, le=100
-    )
-    port_security_enabled: Optional[bool] = Field(
-        None, description="Port security enabled"
-    )
-    port_security_mac_address: Optional[List[str]] = Field(
-        None, description="Allowed MAC addresses"
-    )
-    isolation: Optional[bool] = Field(None, description="Port isolation enabled")
     native_networkconf_id: Optional[str] = Field(
         None, description="Native network configuration ID"
     )
@@ -236,7 +205,15 @@ class WifiStats(WifiMixin, UnifiBaseModel):
     _validate_mac = field_validator("ap_mac", "bssid")(validate_mac)
 
 
-class Client(DeviceBaseMixin, StatisticsMixin, NetworkMixin, TimestampMixin):
+class Client(
+    DeviceBaseMixin,
+    StatisticsMixin,
+    NetworkMixin,
+    TimestampMixin,
+    DeviceIdentificationMixin,
+    ValidationMixin,
+    UnifiBaseModel,
+):
     """UniFi Network client device."""
 
     hostname: str = Field(description="Client hostname")
@@ -246,11 +223,6 @@ class Client(DeviceBaseMixin, StatisticsMixin, NetworkMixin, TimestampMixin):
     wifi_stats: Optional[WifiStats] = Field(
         None, description="WiFi statistics if wireless client"
     )
-    oui: Optional[str] = Field(None, description="Organizationally Unique Identifier")
-    dev_cat: Optional[int] = Field(None, description="Device category")
-    dev_family: Optional[int] = Field(None, description="Device family")
-    dev_vendor: Optional[int] = Field(None, description="Device vendor")
-    os_name: Optional[int] = Field(None, description="Operating system")
     hostname_source: Optional[str] = Field(None, description="Hostname source")
     use_fixedip: Optional[bool] = Field(None, description="Whether using fixed IP")
     fixed_ip: Optional[str] = Field(None, description="Fixed IP address")
@@ -259,21 +231,11 @@ class Client(DeviceBaseMixin, StatisticsMixin, NetworkMixin, TimestampMixin):
     satisfaction_avg: Optional[dict] = Field(
         None, description="Average satisfaction stats"
     )
-    fingerprint_source: Optional[int] = Field(
-        None, description="Device fingerprint source"
-    )
-    fingerprint_engine_version: Optional[str] = Field(
-        None, description="Device fingerprint engine version"
-    )
-    confidence: Optional[int] = Field(
-        None, description="Device identification confidence", ge=0, le=100
-    )
     gw_mac: Optional[str] = Field(None, description="Gateway MAC address")
     gw_vlan: Optional[int] = Field(None, description="Gateway VLAN ID", ge=0, le=4095)
     dhcpend_time: Optional[int] = Field(None, description="DHCP lease end time")
     priority: Optional[int] = Field(None, description="Client priority")
     anomalies: Optional[int] = Field(None, description="Client anomalies")
-    os_class: Optional[int] = Field(None, description="Operating system class")
     local_dns_record_enabled: Optional[bool] = Field(
         None, description="Whether local DNS record is enabled"
     )
@@ -321,13 +283,18 @@ class Client(DeviceBaseMixin, StatisticsMixin, NetworkMixin, TimestampMixin):
     _validate_ipv6_list = field_validator("ipv6_addresses")(validate_ipv6_list)
 
 
-class Device(DeviceBaseMixin, StatisticsMixin, SystemStatsMixin):
+class Device(
+    DeviceBaseMixin,
+    StatisticsMixin,
+    SystemStatsMixin,
+    DeviceIdentificationMixin,
+    VersionMixin,
+    ValidationMixin,
+    UnifiBaseModel,
+):
     """UniFi Network device."""
 
     type: DeviceType = Field(description="Device type")
-    model: Optional[str] = Field(None, description="Device model")
-    version: Optional[str] = Field(None, description="Version string")
-    required_version: Optional[str] = Field(None, description="Required version string")
     port_table: List[PortStats] = Field(
         default_factory=list, description="Port statistics"
     )
@@ -337,7 +304,6 @@ class Device(DeviceBaseMixin, StatisticsMixin, SystemStatsMixin):
     )
     inform_url: Optional[str] = Field(None, description="Inform URL")
     inform_ip: Optional[str] = Field(None, description="Inform IP address")
-    cfgversion: Optional[str] = Field(None, description="Configuration version")
     config_network: Optional[dict] = Field(None, description="Network configuration")
     ethernet_table: Optional[List[dict]] = Field(None, description="Ethernet table")
     radio_table: Optional[List[dict]] = Field(None, description="Radio table")
@@ -359,25 +325,6 @@ class Device(DeviceBaseMixin, StatisticsMixin, SystemStatsMixin):
     upgradable: Optional[bool] = Field(None, description="Whether device is upgradable")
     discovered_via: Optional[str] = Field(None, description="How device was discovered")
     uplink_table: Optional[List[dict]] = Field(None, description="Uplink table")
-    kernel_version: Optional[str] = Field(None, description="Device kernel version")
-    architecture: Optional[str] = Field(None, description="Device architecture")
-    board_rev: Optional[int] = Field(None, description="Board revision")
-    manufacturer_id: Optional[int] = Field(None, description="Manufacturer ID")
-    model_in_lts: Optional[bool] = Field(None, description="Whether model is in LTS")
-    model_in_eol: Optional[bool] = Field(None, description="Whether model is EOL")
-    scan_radio_table: Optional[List[dict]] = Field(
-        None, description="Radio scan results"
-    )
-    antenna_table: Optional[List[dict]] = Field(
-        None, description="Antenna configuration"
-    )
-    radio_table_stats: Optional[List[dict]] = Field(
-        None, description="Radio statistics"
-    )
-    port_overrides: Optional[List[dict]] = Field(
-        None, description="Port override settings"
-    )
-    license_state: Optional[str] = Field(None, description="License state")
     hw_caps: Optional[int] = Field(None, description="Hardware capabilities")
     guest_token: Optional[str] = Field(None, description="Guest authentication token")
     x_ssh_hostkey: Optional[str] = Field(None, description="SSH host key")
