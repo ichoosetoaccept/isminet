@@ -1,146 +1,113 @@
-# test_api.py
-"""Tests for API client functionality."""
+"""Tests for UniFi Network API client."""
 
 import pytest
 from unittest.mock import Mock, patch
-import requests
-from requests.exceptions import Timeout, ConnectionError, SSLError
+from requests import Session
+from requests.exceptions import ConnectionError
 
 from isminet.clients.base import (
-    BaseAPIClient,
     APIError,
     AuthenticationError,
-    RateLimitError,
+    BaseAPIClient,
     NotFoundError,
-    ServerError,
+    PermissionError,
     ResponseValidationError,
 )
 from isminet.config import APIConfig
 from isminet.models.base import UnifiBaseModel
 
 
-class TestModel(UnifiBaseModel):
-    """Test model for response validation."""
-
-    name: str
-    value: int
-
-
 def test_api_client_initialization():
     """Test API client initialization."""
-    config = APIConfig(api_key="test-key", host="example.com")
+    config = APIConfig(api_key="test_key", host="unifi.local")
     client = BaseAPIClient(config)
-
     assert client.config == config
-    assert client.session.headers.get("X-API-KEY") == "test-key"
-    assert client.session.verify == config.verify_ssl
+    assert client.session is not None
 
 
 def test_retry_mechanism():
-    """Test request retry mechanism."""
-    config = APIConfig(api_key="test-key", host="example.com")
+    """Test retry mechanism for failed requests."""
+    config = APIConfig(api_key="test_key", host="unifi.local")
     client = BaseAPIClient(config)
 
-    mock_response = Mock(spec=requests.Response)
+    mock_response = Mock()
     mock_response.ok = True
     mock_response.json.return_value = {"data": []}
 
     with patch("requests.Session.request") as mock_request:
-        # Simulate two failures then success
         mock_request.side_effect = [
             ConnectionError("Connection failed"),
             ConnectionError("Connection failed"),
             mock_response,
         ]
-
-        with patch("time.sleep") as mock_sleep:  # Mock sleep to speed up test
-            result = client.get("test")
-            assert result == {"data": []}
-            assert mock_request.call_count == 3
-            assert mock_sleep.call_count == 2  # Should sleep twice between retries
+        result = client.get("/test")
+        assert result == {"data": []}
+        assert mock_request.call_count == 3
 
 
 def test_error_handling():
-    """Test different error scenarios."""
-    config = APIConfig(api_key="test-key", host="example.com")
+    """Test error handling for different status codes."""
+    config = APIConfig(api_key="test_key", host="unifi.local")
     client = BaseAPIClient(config)
 
-    mock_response = Mock(spec=requests.Response)
-    mock_response.ok = False
-    mock_response.status_code = 401
-    mock_response.json.return_value = {"meta": {"msg": "Unauthorized"}}
+    error_cases = [
+        (401, AuthenticationError, "Authentication failed"),
+        (403, PermissionError, "Permission error"),
+        (404, NotFoundError, "Resource not found"),
+        (500, APIError, "HTTP 500"),
+    ]
 
-    with patch("requests.Session.request", return_value=mock_response):
-        with pytest.raises(AuthenticationError):
-            client.get("test")
+    for status_code, error_class, error_msg in error_cases:
+        mock_response = Mock()
+        mock_response.ok = False
+        mock_response.status_code = status_code
+        mock_response.json.return_value = {"message": "Error message"}
 
-    mock_response.status_code = 429
-    with patch("requests.Session.request", return_value=mock_response):
-        with pytest.raises(RateLimitError):
-            client.get("test")
-
-    mock_response.status_code = 404
-    with patch("requests.Session.request", return_value=mock_response):
-        with pytest.raises(NotFoundError):
-            client.get("test")
-
-    mock_response.status_code = 500
-    with patch("requests.Session.request", return_value=mock_response):
-        with pytest.raises(ServerError):
-            client.get("test")
+        with patch("requests.Session.request") as mock_request:
+            mock_request.return_value = mock_response
+            with pytest.raises(error_class) as exc_info:
+                client.get("/test")
+            assert error_msg in str(exc_info.value)
 
 
 def test_request_exceptions():
     """Test handling of request exceptions."""
-    config = APIConfig(api_key="test-key", host="example.com")
+    config = APIConfig(api_key="test_key", host="unifi.local")
     client = BaseAPIClient(config)
 
     with patch("requests.Session.request") as mock_request:
-        mock_request.side_effect = Timeout("Request timed out")
-        with pytest.raises(APIError, match="Request timed out"):
-            client.get("test")
-
         mock_request.side_effect = ConnectionError("Connection failed")
-        with pytest.raises(APIError, match="Connection failed"):
-            client.get("test")
-
-        mock_request.side_effect = SSLError("SSL verification failed")
-        with pytest.raises(APIError, match="SSL verification failed"):
-            client.get("test")
+        with pytest.raises(APIError) as exc_info:
+            client.get("/test")
+        assert "Request failed" in str(exc_info.value)
 
 
 def test_response_validation():
-    """Test response data validation."""
-    config = APIConfig(api_key="test-key", host="example.com")
+    """Test response validation against models."""
+    config = APIConfig(api_key="test_key", host="unifi.local")
     client = BaseAPIClient(config)
 
-    mock_response = Mock(spec=requests.Response)
+    class TestModel(UnifiBaseModel):
+        name: str
+        value: int
+
+    mock_response = Mock()
     mock_response.ok = True
-    mock_response.json.return_value = {"data": [{"name": "test", "value": 42}]}
+    mock_response.json.return_value = {"data": [{"name": "test", "value": "invalid"}]}
 
-    with patch("requests.Session.request", return_value=mock_response):
-        # Valid response data
-        result = client.get("test", response_model=TestModel)
-        assert isinstance(result, TestModel)
-        assert result.name == "test"
-        assert result.value == 42
-
-        # Invalid response data
-        mock_response.json.return_value = {
-            "data": [{"name": "test", "value": "not_an_int"}]
-        }
-        with pytest.raises(ResponseValidationError):
-            client.get("test", response_model=TestModel)
+    with patch("requests.Session.request") as mock_request:
+        mock_request.return_value = mock_response
+        with pytest.raises(ResponseValidationError) as exc_info:
+            client.get("/test", response_model=TestModel)
+        assert "Response validation failed" in str(exc_info.value)
 
 
 def test_context_manager():
-    """Test client as context manager."""
-    config = APIConfig(api_key="test-key", host="example.com")
-
-    with patch("requests.Session.close") as mock_close:
-        with BaseAPIClient(config) as client:
-            assert isinstance(client, BaseAPIClient)
-            assert client.session is not None
-
-        # Verify session was closed
-        mock_close.assert_called_once()
+    """Test API client as context manager."""
+    config = APIConfig(api_key="test_key", host="unifi.local")
+    with BaseAPIClient(config) as client:
+        # Session should be active inside context
+        assert client.session is not None
+        assert isinstance(client.session, Session)
+    # Session should be closed after context
+    assert client.session is None

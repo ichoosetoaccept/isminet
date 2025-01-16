@@ -1,19 +1,23 @@
 """Base models for the UniFi Network API."""
 
-from typing import Generic, TypeVar, List, Optional
-from pydantic import BaseModel, Field, ConfigDict, ValidationInfo, field_validator
+from typing import Generic, List, Optional, TypeVar, Union, get_args
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    ValidationInfo,
+)
 from pydantic_core import PydanticCustomError
 
 T = TypeVar("T")
 
 
 class UnifiBaseModel(BaseModel):
-    """Base model with common configuration for all UniFi models."""
+    """Base model for all UniFi Network API models."""
 
     model_config = ConfigDict(
-        str_strip_whitespace=True,
-        str_min_length=1,
-        strict=True,
+        extra="ignore", str_strip_whitespace=True, validate_assignment=True
     )
 
 
@@ -67,17 +71,34 @@ class ValidationMixin(UnifiBaseModel):
         return v
 
 
-class Meta(UnifiBaseModel):
-    """Response metadata from the UniFi API."""
+class Meta(BaseModel):
+    """Meta information for UniFi Network API responses."""
 
-    rc: str = Field(description="Response code, 'ok' indicates success")
+    rc: str = "ok"
+    msg: Optional[str] = None
 
 
-class BaseResponse(UnifiBaseModel, Generic[T]):
-    """Base response model for UniFi API endpoints."""
+class BaseResponse(BaseModel, Generic[T]):
+    """Base response model for UniFi Network API responses."""
 
-    meta: Meta
-    data: List[T]
+    meta: Meta = Field(default_factory=Meta)
+    data: Union[T, List[T]] = Field(default_factory=lambda: [])
+
+    def validate_data(self) -> None:
+        """Validate the data field against the type argument T."""
+        if not hasattr(self, "__orig_bases__"):
+            return
+
+        model_type = get_args(self.__orig_bases__[0])[0]
+        if not self.data:
+            return
+
+        if isinstance(self.data, list):
+            for item in self.data:
+                if not isinstance(item, model_type):
+                    model_type(**item)
+        elif not isinstance(self.data, model_type):
+            model_type(**self.data)
 
 
 class StatisticsMixin(UnifiBaseModel):
@@ -316,3 +337,17 @@ class VersionMixin(UnifiBaseModel):
     cfgversion: Optional[str] = Field(None, description="Configuration version")
     model_in_lts: Optional[bool] = Field(None, description="Whether model is in LTS")
     model_in_eol: Optional[bool] = Field(None, description="Whether model is EOL")
+
+
+class Site(BaseModel):
+    """Site model for UniFi Network API."""
+
+    id: str = Field(alias="_id", min_length=1)
+    name: str = Field(min_length=1)
+    desc: Optional[str] = None
+    device_count: int = Field(ge=0)
+    anonymous_id: Optional[str] = None
+    attr_no_delete: Optional[bool] = None
+    attr_hidden_id: Optional[str] = None
+    role: Optional[str] = None
+    role_hotspot: Optional[bool] = None

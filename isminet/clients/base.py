@@ -1,106 +1,63 @@
 """Base API client implementation."""
 
-import logging
-from typing import Any, TypeVar, Optional, Type, cast
-from functools import wraps
+import time
+from typing import Any, Dict, Optional, Type, TypeVar, Union
+from urllib.parse import urljoin
 
-import requests
-from requests.exceptions import RequestException, Timeout, ConnectionError, SSLError
-from pydantic import ValidationError as PydanticValidationError
+from requests import Response, Session, Timeout
+from requests.exceptions import ConnectionError
+from pydantic import ValidationError
 
 from ..config import APIConfig
-from ..models.base import BaseResponse, UnifiBaseModel
+from ..models.base import UnifiBaseModel
 
-# Configure logging
-logger = logging.getLogger(__name__)
-
-# Type variable for response models
 T = TypeVar("T", bound=UnifiBaseModel)
 
 
 class APIError(Exception):
-    """Base exception for API errors."""
-
-    def __init__(self, message: str, response: Optional[requests.Response] = None):
-        super().__init__(message)
-        self.response = response
-        self.status_code = response.status_code if response else None
-        self.error_data = None
-        if response:
-            try:
-                self.error_data = response.json()
-            except ValueError:
-                pass
+    """Base class for API errors."""
 
 
 class AuthenticationError(APIError):
-    """Raised when authentication fails."""
+    """Authentication error."""
 
 
-class RateLimitError(APIError):
-    """Raised when API rate limit is exceeded."""
-
-
-class ValidationError(APIError):
-    """Raised when request validation fails."""
+class PermissionError(APIError):
+    """Permission error."""
 
 
 class NotFoundError(APIError):
-    """Raised when requested resource is not found."""
+    """Resource not found error."""
 
 
-class ServerError(APIError):
-    """Raised when server returns 5xx error."""
-
-
-class ResponseValidationError(ValidationError):
-    """Raised when response validation fails."""
+class ResponseValidationError(APIError):
+    """Response validation error."""
 
     def __init__(
-        self,
-        message: str,
-        validation_error: PydanticValidationError,
-        response: Optional[requests.Response] = None,
-    ):
-        super().__init__(message, response)
+        self, message: str, validation_error: Optional[ValidationError] = None
+    ) -> None:
+        super().__init__(message)
         self.validation_error = validation_error
 
 
-def with_retry(max_retries: int = 3, backoff_factor: float = 0.5):
-    """Decorator for retrying failed API requests.
-
-    Args:
-        max_retries: Maximum number of retry attempts
-        backoff_factor: Delay multiplier between retries
-    """
+def with_retry(max_retries: int = 3, delay: float = 1.0):
+    """Decorator to retry failed requests."""
 
     def decorator(func):
-        @wraps(func)
         def wrapper(*args, **kwargs):
-            last_error = None
-            for attempt in range(max_retries + 1):
+            for attempt in range(max_retries):
                 try:
                     return func(*args, **kwargs)
                 except (ConnectionError, Timeout) as e:
-                    last_error = e
-                    if attempt == max_retries:
-                        break
-                    delay = backoff_factor * (2**attempt)
-                    logger.warning(
-                        "Request failed (attempt %d/%d). Retrying in %.1f seconds...",
-                        attempt + 1,
-                        max_retries,
-                        delay,
-                    )
-                    import time
-
+                    if attempt == max_retries - 1:
+                        raise APIError(
+                            f"Request failed after {max_retries} retries: {str(e)}"
+                        )
                     time.sleep(delay)
-                except (AuthenticationError, ValidationError, NotFoundError):
+                except (AuthenticationError, PermissionError, NotFoundError):
                     # Don't retry client errors
                     raise
-            raise APIError(
-                f"Request failed after {max_retries} retries: {str(last_error)}"
-            )
+            return func(*args, **kwargs)
 
         return wrapper
 
@@ -108,111 +65,47 @@ def with_retry(max_retries: int = 3, backoff_factor: float = 0.5):
 
 
 class BaseAPIClient:
-    """Base implementation for UniFi Network API client."""
+    """Base API client for UniFi Network API."""
 
     def __init__(self, config: APIConfig) -> None:
-        """Initialize API client.
-
-        Args:
-            config: API configuration
-        """
+        """Initialize the API client."""
         self.config = config
-        self.session = self._create_session()
+        self.session = Session()
+        self.session.verify = config.verify_ssl
+        self.session.headers.update(
+            {
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+            }
+        )
+        if config.api_key:
+            self.session.headers["Authorization"] = f"Bearer {config.api_key}"
 
-    def _create_session(self) -> requests.Session:
-        """Create and configure requests session.
+    def _build_url(self, endpoint: str) -> str:
+        """Build the full URL for an API endpoint."""
+        scheme = "https" if self.config.verify_ssl else "http"
+        port = f":{self.config.port}" if self.config.port else ""
+        base_url = f"{scheme}://{self.config.host}{port}"
+        return urljoin(base_url, endpoint.lstrip("/"))
 
-        Returns:
-            Configured requests Session
-        """
-        session = requests.Session()
-
-        # Set default headers
-        session.headers.update(self.config.get_headers())
-
-        # Configure SSL verification
-        session.verify = self.config.verify_ssl
-        if not self.config.verify_ssl:
-            # Disable SSL warning if verification is disabled
-            import urllib3
-
-            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
-        return session
-
-    def _handle_error_response(self, response: requests.Response) -> None:
-        """Handle error responses based on status code.
-
-        Args:
-            response: Response object from request
-
-        Raises:
-            AuthenticationError: For 401/403 errors
-            RateLimitError: For 429 errors
-            ValidationError: For 400/422 errors
-            NotFoundError: For 404 errors
-            ServerError: For 5xx errors
-            APIError: For other errors
-        """
-        error_msg = "API request failed"
+    def _handle_error_response(self, response: Response) -> None:
+        """Handle error responses from the API."""
         try:
             error_data = response.json()
+            error_message = error_data.get("message", "Unknown error")
             if "meta" in error_data and "msg" in error_data["meta"]:
-                error_msg = error_data["meta"]["msg"]
-        except ValueError:
-            error_msg = response.text or error_msg
+                error_message = error_data["meta"]["msg"]
+        except (ValueError, KeyError):
+            error_message = response.text or "Unknown error"
 
-        if response.status_code in (401, 403):
-            raise AuthenticationError(f"Authentication failed: {error_msg}", response)
-        elif response.status_code == 429:
-            raise RateLimitError(f"Rate limit exceeded: {error_msg}", response)
-        elif response.status_code in (400, 422):
-            raise ValidationError(f"Request validation failed: {error_msg}", response)
+        if response.status_code == 401:
+            raise AuthenticationError("Authentication failed: " + error_message)
+        elif response.status_code == 403:
+            raise PermissionError("Permission error: " + error_message)
         elif response.status_code == 404:
-            raise NotFoundError(f"Resource not found: {error_msg}", response)
-        elif 500 <= response.status_code < 600:
-            raise ServerError(f"Server error: {error_msg}", response)
+            raise NotFoundError("Resource not found: " + error_message)
         else:
-            raise APIError(f"Unexpected error: {error_msg}", response)
-
-    def _validate_response(
-        self, response_data: dict[str, Any], response_model: Type[T]
-    ) -> T:
-        """Validate response data against expected model.
-
-        Args:
-            response_data: Response data to validate
-            response_model: Expected response model type
-
-        Returns:
-            Validated response model instance
-
-        Raises:
-            ResponseValidationError: If validation fails
-        """
-        try:
-            if issubclass(response_model, BaseResponse):
-                # For BaseResponse types, validate the entire response
-                return cast(T, response_model(**response_data))
-            else:
-                # For other models, expect data to be in the 'data' field
-                if "data" not in response_data or not isinstance(
-                    response_data["data"], list
-                ):
-                    raise ResponseValidationError(
-                        "Invalid response format: missing or invalid 'data' field",
-                        PydanticValidationError("Invalid response format", []),
-                        None,
-                    )
-                if len(response_data["data"]) == 0:
-                    # Return empty instance for empty data
-                    return response_model()
-                # Validate first item in data array
-                return cast(T, response_model(**response_data["data"][0]))
-        except PydanticValidationError as e:
-            raise ResponseValidationError(
-                f"Response validation failed: {str(e)}", e, None
-            )
+            raise APIError(f"HTTP {response.status_code}: {error_message}")
 
     @with_retry()
     def _request(
@@ -221,29 +114,9 @@ class BaseAPIClient:
         endpoint: str,
         response_model: Optional[Type[T]] = None,
         **kwargs: Any,
-    ) -> Any:
-        """Make HTTP request to API.
-
-        Args:
-            method: HTTP method
-            endpoint: API endpoint path
-            response_model: Expected response model type
-            **kwargs: Additional arguments to pass to requests
-
-        Returns:
-            Response data as dict or validated model instance
-
-        Raises:
-            APIError: If request fails
-            AuthenticationError: If authentication fails
-            RateLimitError: If rate limit is exceeded
-            ValidationError: If request validation fails
-            NotFoundError: If resource is not found
-            ServerError: If server returns 5xx error
-            ResponseValidationError: If response validation fails
-        """
-        url = f"{self.config.api_url}/{endpoint.lstrip('/')}"
-
+    ) -> Union[T, Dict[str, Any]]:
+        """Make an HTTP request to the UniFi Network API."""
+        url = self._build_url(endpoint)
         try:
             response = self.session.request(
                 method=method,
@@ -251,59 +124,82 @@ class BaseAPIClient:
                 timeout=self.config.timeout,
                 **kwargs,
             )
+            if not response.ok:
+                self._handle_error_response(response)
 
-            if response.ok:
-                response_data = response.json()
-                if response_model is not None:
-                    return self._validate_response(response_data, response_model)
-                return response_data
-
-            self._handle_error_response(response)
-
+            data = response.json()
+            if response_model:
+                if "data" in data and isinstance(data["data"], list) and data["data"]:
+                    # If data is a list and not empty, use first item
+                    return response_model(**data["data"][0])
+                elif "data" in data and not data["data"]:
+                    # If data is empty list, return empty model
+                    return response_model()
+                else:
+                    # Otherwise, try to parse entire response
+                    return response_model(**data)
+            return data
         except (ConnectionError, Timeout):
-            # Let the retry decorator handle these errors
             raise
-        except SSLError as e:
-            # Don't retry SSL errors
-            raise APIError(
-                "SSL verification failed", getattr(e, "response", None)
-            ) from e
-        except RequestException as e:
-            # Don't retry other request exceptions
-            raise APIError(str(e), getattr(e, "response", None)) from e
+        except ValidationError as e:
+            raise ResponseValidationError(f"Response validation failed: {str(e)}", e)
+        except (AuthenticationError, PermissionError, NotFoundError):
+            raise
+        except Exception as e:
+            raise APIError(f"Unexpected error: {str(e)}")
 
     def get(
-        self, endpoint: str, response_model: Optional[Type[T]] = None, **kwargs: Any
-    ) -> Any:
-        """Make GET request to API endpoint."""
+        self,
+        endpoint: str,
+        response_model: Optional[Type[T]] = None,
+        **kwargs: Any,
+    ) -> Union[T, Dict[str, Any]]:
+        """Make a GET request."""
         return self._request("GET", endpoint, response_model, **kwargs)
 
     def post(
-        self, endpoint: str, response_model: Optional[Type[T]] = None, **kwargs: Any
-    ) -> Any:
-        """Make POST request to API endpoint."""
+        self,
+        endpoint: str,
+        response_model: Optional[Type[T]] = None,
+        **kwargs: Any,
+    ) -> Union[T, Dict[str, Any]]:
+        """Make a POST request."""
         return self._request("POST", endpoint, response_model, **kwargs)
 
     def put(
-        self, endpoint: str, response_model: Optional[Type[T]] = None, **kwargs: Any
-    ) -> Any:
-        """Make PUT request to API endpoint."""
+        self,
+        endpoint: str,
+        response_model: Optional[Type[T]] = None,
+        **kwargs: Any,
+    ) -> Union[T, Dict[str, Any]]:
+        """Make a PUT request."""
         return self._request("PUT", endpoint, response_model, **kwargs)
 
     def delete(
-        self, endpoint: str, response_model: Optional[Type[T]] = None, **kwargs: Any
-    ) -> Any:
-        """Make DELETE request to API endpoint."""
+        self,
+        endpoint: str,
+        response_model: Optional[Type[T]] = None,
+        **kwargs: Any,
+    ) -> Union[T, Dict[str, Any]]:
+        """Make a DELETE request."""
         return self._request("DELETE", endpoint, response_model, **kwargs)
 
     def close(self) -> None:
-        """Close the API client session."""
-        self.session.close()
+        """Close the session."""
+        if self.session:
+            self.session.close()
 
     def __enter__(self) -> "BaseAPIClient":
-        """Enter context manager."""
+        """Enter the context manager."""
         return self
 
-    def __exit__(self, exc_type, exc_value, traceback) -> None:
-        """Exit context manager."""
-        self.close()
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[Any],
+    ) -> None:
+        """Exit the context manager and close the session."""
+        if self.session:
+            self.session.close()
+            self.session = None  # type: ignore
