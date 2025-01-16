@@ -27,7 +27,25 @@ class SystemHealth(ValidationMixin, SystemStatsMixin, UnifiBaseModel):
     @field_validator("status")
     @classmethod
     def validate_status(cls, v: str) -> str:
-        """Validate health status."""
+        """
+        Validate the health status of a subsystem.
+        
+        Ensures that the provided status is one of the predefined valid statuses.
+        
+        Args:
+            v (str): The health status to validate.
+        
+        Returns:
+            str: The validated health status.
+        
+        Raises:
+            ValueError: If the status is not one of 'ok', 'warning', or 'error'.
+        
+        Example:
+            validate_status('ok')  # Returns 'ok'
+            validate_status('warning')  # Returns 'warning'
+            validate_status('invalid')  # Raises ValueError
+        """
         valid_statuses = {"ok", "warning", "error"}
         if v not in valid_statuses:
             raise ValueError(f"Status must be one of: {', '.join(valid_statuses)}")
@@ -35,7 +53,22 @@ class SystemHealth(ValidationMixin, SystemStatsMixin, UnifiBaseModel):
 
     @model_validator(mode="after")
     def validate_timestamps(self) -> "SystemHealth":
-        """Validate check timestamps."""
+        """
+        Validate the timestamps for a system health check to ensure the next check is scheduled after the last check.
+        
+        This method performs a validation check on the `last_check` and `next_check` timestamps:
+        - If both timestamps are provided, it verifies that the next check is scheduled after the last check
+        - Raises a ValueError if the next check timestamp is not later than the last check timestamp
+        
+        Parameters:
+            self (SystemHealth): The SystemHealth instance being validated
+        
+        Returns:
+            SystemHealth: The validated SystemHealth instance
+        
+        Raises:
+            ValueError: If next_check is not after last_check when both timestamps are present
+        """
         if self.last_check is not None and self.next_check is not None:
             if self.last_check >= self.next_check:
                 raise ValueError("next_check must be after last_check")
@@ -71,7 +104,23 @@ class ServiceStatus(ValidationMixin, UnifiBaseModel):
     @field_validator("status")
     @classmethod
     def validate_status(cls, v: str) -> str:
-        """Validate service status."""
+        """
+        Validate the status of a service against a predefined set of valid statuses.
+        
+        Args:
+            v (str): The status to validate.
+        
+        Returns:
+            str: The validated status.
+        
+        Raises:
+            ValueError: If the status is not one of 'running', 'stopped', or 'error'.
+        
+        Example:
+            validate_status('running')  # Returns 'running'
+            validate_status('error')    # Returns 'error'
+            validate_status('invalid')  # Raises ValueError
+        """
         valid_statuses = {"running", "stopped", "error"}
         if v not in valid_statuses:
             raise ValueError(f"Status must be one of: {', '.join(valid_statuses)}")

@@ -203,7 +203,28 @@ class Client(
     @model_validator(mode="before")
     @classmethod
     def validate_component_fields(cls, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Validate fields that will be moved to component models."""
+        """
+        Validate fields for component models in a client device.
+        
+        This method performs validation of required fields and component-specific data for a client device. It ensures that essential fields are present and that component-specific data can be successfully instantiated.
+        
+        Parameters:
+            cls (type): The class on which the validation is being performed.
+            data (Dict[str, Any]): A dictionary containing client device data to be validated.
+        
+        Returns:
+            Dict[str, Any]: The original input data if validation is successful.
+        
+        Raises:
+            PydanticCustomError: If required fields are missing or component data is invalid.
+                - Error code "missing_required_fields": Raised when essential fields like 'mac' or 'first_seen' are absent.
+                - Error code "invalid_component_data": Raised when component-specific data fails validation.
+        
+        Notes:
+            - Checks for mandatory fields: 'mac' and 'first_seen'
+            - Extracts and validates data for network, tracking, guest, and DNS components
+            - Uses Pydantic models (ClientNetwork, ClientTracking, ClientGuest, ClientDNS) for component validation
+        """
         # Check required fields
         required_fields = {"mac", "first_seen"}
         missing_fields = required_fields - data.keys()
@@ -244,7 +265,30 @@ class Client(
         return data
 
     def __init__(self, **data: Any) -> None:
-        """Initialize client with component models."""
+        """
+        Initialize a Client instance with component models.
+        
+        This method extracts and initializes component-specific data for network, tracking, 
+        guest, and DNS configurations. It separates component-specific fields from the main 
+        data dictionary and creates corresponding Pydantic models for each component.
+        
+        Parameters:
+            **data (Any): Keyword arguments containing client data, including component-specific fields.
+        
+        Notes:
+            - Extracts fields specific to each component model (ClientNetwork, ClientTracking, 
+              ClientGuest, ClientDNS) based on their type annotations.
+            - Removes component-specific fields from the main data dictionary.
+            - Creates component models only if corresponding data is present.
+            - Uses the parent class's __init__ method to finalize initialization.
+        
+        Example:
+            client = Client(
+                mac='00:11:22:33:44:55', 
+                network_vlan=100, 
+                tracking_first_seen=datetime.now()
+            )
+        """
         # Extract component data
         network_data = {
             k: v for k, v in data.items() if k in ClientNetwork.__annotations__
@@ -340,7 +384,25 @@ class Device(
     @model_validator(mode="before")
     @classmethod
     def validate_component_fields(cls, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Validate fields that will be moved to component models."""
+        """
+        Validate fields for device component models, ensuring required fields are present and component data is valid.
+        
+        This method performs two primary validation tasks:
+        1. Checks that essential device fields (mac, type, version) are present
+        2. Extracts and validates data for device component models (network, wireless, security, system)
+        
+        Parameters:
+            cls (type): The class on which the validation is being performed
+            data (Dict[str, Any]): A dictionary of device data to validate
+        
+        Returns:
+            Dict[str, Any]: The original input data if validation succeeds
+        
+        Raises:
+            PydanticCustomError: If required fields are missing or component data is invalid
+                - Error code "missing_required_fields": When essential fields are not present
+                - Error code "invalid_component_data": When component model validation fails
+        """
         # Check required fields
         required_fields = {"mac", "type", "version"}
         missing_fields = required_fields - data.keys()
@@ -385,7 +447,25 @@ class Device(
         return data
 
     def __init__(self, **data: Any) -> None:
-        """Initialize device with component models."""
+        """
+        Initialize a Device instance with component models.
+        
+        This method extracts and separates component-specific data for DeviceNetwork, 
+        DeviceWireless, DeviceSecurity, and DeviceSystem from the input data. It creates 
+        separate component models for each valid component type and removes their 
+        corresponding keys from the main data dictionary.
+        
+        Parameters:
+            **data (Any): Keyword arguments containing device configuration data. 
+                Data will be split into component-specific models and remaining 
+                general device attributes.
+        
+        Notes:
+            - Component models are only created if corresponding data is provided
+            - Component models are added to the main data dictionary under keys 
+              'network', 'wireless', 'security', and 'system'
+            - Remaining data is passed to the parent class constructor
+        """
         # Extract component data
         network_data = {
             k: v for k, v in data.items() if k in DeviceNetwork.__annotations__

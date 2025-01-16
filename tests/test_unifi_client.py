@@ -15,7 +15,17 @@ from isminet.models.enums import DeviceType, DHCPMode
 
 @pytest.fixture
 def unifi_client():
-    """Create UnifiClient instance for testing."""
+    """
+    Pytest fixture that creates and returns a configured UnifiClient instance for testing purposes.
+    
+    The fixture initializes a UnifiClient with predefined test configuration parameters, allowing consistent and controlled API client setup across test scenarios.
+    
+    Parameters:
+        None
+    
+    Returns:
+        UnifiClient: A configured UnifiClient instance with test credentials and settings
+    """
     config = APIConfig(
         api_key="test-key",
         host="unifi.local",
@@ -28,7 +38,20 @@ def unifi_client():
 
 @pytest.fixture
 def mock_device_response():
-    """Mock device response data."""
+    """
+    Provides a mock response simulating a UniFi network device for testing purposes.
+    
+    Returns:
+        dict: A dictionary containing a list of device data with predefined attributes, including:
+            - mac (str): Device MAC address
+            - type (DeviceType): Device type (UniFi Gateway)
+            - version (str): Firmware version
+            - model (str): Device model
+            - name (str): Device name
+            - ip (str): IP address
+            - uptime (int): Device uptime in seconds
+            - status (str): Connection status
+    """
     return {
         "data": [
             {
@@ -47,7 +70,20 @@ def mock_device_response():
 
 @pytest.fixture
 def mock_client_response():
-    """Mock client response data."""
+    """
+    Provides a mock response simulating a client device's network data for testing purposes.
+    
+    Returns:
+        dict: A dictionary containing a list of client data with predefined attributes, including:
+            - mac (str): Client's MAC address
+            - hostname (str): Client's hostname
+            - ip (str): Client's IP address
+            - network_id (str): Network identifier
+            - is_guest (bool): Guest network status
+            - last_seen (int): Timestamp of last device detection
+            - uptime (int): Duration the client has been connected
+            - first_seen (int): Timestamp of first device detection
+    """
     return {
         "data": [
             {
@@ -66,7 +102,21 @@ def mock_client_response():
 
 @pytest.fixture
 def mock_network_response():
-    """Mock network response data."""
+    """
+    Provides a mock response simulating a network configuration for testing UniFi Network API client interactions.
+    
+    Returns:
+        dict: A dictionary containing a list of network configuration data with the following structure:
+        - 'data': A list with a single network configuration dictionary
+        - Network configuration includes:
+            * 'id': Network identifier (str)
+            * 'name': Network name (str)
+            * 'purpose': Network purpose (str)
+            * 'subnet': Network subnet (str)
+            * 'enabled': Network enabled status (bool)
+            * 'vlan_enabled': VLAN configuration status (bool)
+            * 'vlans': List of VLAN configurations with detailed DHCP settings
+    """
     return {
         "data": [
             {
@@ -100,7 +150,21 @@ def mock_network_response():
 
 @pytest.fixture
 def mock_system_response():
-    """Mock system response data."""
+    """
+    Provides a mock response simulating system health data for UniFi network testing.
+    
+    Returns:
+        dict: A dictionary containing system health metrics with the following keys:
+            - data (list): A list with a single dictionary representing system health
+            - subsystem (str): Name of the system subsystem (e.g., "network")
+            - status (str): Overall system status ("ok")
+            - cpu_usage (float): Current CPU utilization percentage
+            - mem_usage (float): Current memory usage percentage
+            - temperature (float): System temperature in degrees
+            - loadavg_1 (float): 1-minute system load average
+            - loadavg_5 (float): 5-minute system load average
+            - loadavg_15 (float): 15-minute system load average
+    """
     return {
         "data": [
             {
@@ -118,13 +182,41 @@ def mock_system_response():
 
 
 def test_site_path_construction(unifi_client):
-    """Test site path property."""
+    """
+    Test the construction of the site path for the UniFi client.
+    
+    Verifies that the `site_path` property is correctly generated with the default site name.
+    
+    Args:
+        unifi_client: A configured UniFi client instance to test.
+    
+    Asserts:
+        The site path is constructed as "/api/s/default" for the default site.
+    """
     assert unifi_client.site_path == "/api/s/default"
 
 
 @patch("requests.Session.request")
 def test_device_management(mock_request, unifi_client, mock_device_response):
-    """Test device management methods."""
+    """
+    Test the device management methods of the UniFi Network API client.
+    
+    This test function verifies the functionality of device retrieval methods:
+    - Checks the `get_devices()` method returns a list of Device objects
+    - Validates that the returned devices have the correct MAC address
+    - Tests the `get_device()` method for retrieving a specific device by MAC address
+    
+    Args:
+        mock_request (Mock): Mocked request method to simulate API responses
+        unifi_client (UnifiClient): Configured UniFi client instance for testing
+        mock_device_response (dict): Predefined mock response containing device data
+    
+    Assertions:
+        - Verifies one device is returned from `get_devices()`
+        - Confirms returned devices are of type Device
+        - Checks the MAC address matches the expected value
+        - Validates `get_device()` returns a Device with the correct MAC address
+    """
     mock_response = Mock()
     mock_response.json.return_value = mock_device_response
     mock_response.status_code = 200
@@ -145,7 +237,23 @@ def test_device_management(mock_request, unifi_client, mock_device_response):
 
 @patch("requests.Session.request")
 def test_client_management(mock_request, unifi_client, mock_client_response):
-    """Test client management methods."""
+    """
+    Test the client management methods of the UniFi Network API client.
+    
+    This test function verifies the functionality of client retrieval methods:
+    - Checks the `get_clients()` method returns a list of Client objects
+    - Validates the `get_client()` method retrieves a specific client by MAC address
+    
+    Args:
+        mock_request (Mock): Mocked request method to simulate API responses
+        unifi_client (UnifiClient): Configured UniFi client instance for testing
+        mock_client_response (dict): Predefined mock response containing client data
+    
+    Assertions:
+        - Verifies exactly one client is returned by `get_clients()`
+        - Confirms returned clients are instances of the Client class
+        - Checks the MAC address of retrieved clients matches the expected value
+    """
     mock_response = Mock()
     mock_response.json.return_value = mock_client_response
     mock_response.status_code = 200
@@ -166,7 +274,23 @@ def test_client_management(mock_request, unifi_client, mock_client_response):
 
 @patch("requests.Session.request")
 def test_network_settings(mock_request, unifi_client, mock_network_response):
-    """Test network settings methods."""
+    """
+    Test the retrieval and validation of network configuration from the UniFi Network API.
+    
+    This test function verifies the `get_network_config()` method of the UniFi client by:
+    - Mocking the API request response with predefined network configuration data
+    - Retrieving network configuration for the "default" network
+    - Asserting that the returned object is a NetworkConfiguration instance
+    - Validating key network configuration properties such as name, purpose, enabled status, and subnet
+    
+    Parameters:
+        mock_request (MagicMock): Mocked request method to simulate API calls
+        unifi_client (UnifiClient): Configured UniFi client instance for testing
+        mock_network_response (dict): Predefined mock network configuration response data
+    
+    Raises:
+        AssertionError: If the network configuration does not match expected values
+    """
     mock_response = Mock()
     mock_response.json.return_value = mock_network_response
     mock_response.status_code = 200
@@ -184,7 +308,26 @@ def test_network_settings(mock_request, unifi_client, mock_network_response):
 
 @patch("requests.Session.request")
 def test_system_status(mock_request, unifi_client, mock_system_response):
-    """Test system status methods."""
+    """
+    Test the retrieval and validation of system health information from the UniFi Network API.
+    
+    This test function verifies the `get_system_health()` method of the UniFi client by:
+    - Mocking the API request response with predefined system health data
+    - Ensuring the returned object is an instance of SystemHealth
+    - Checking that system health metrics are correctly parsed and match expected values
+    
+    Parameters:
+        mock_request (MagicMock): Mocked request method to simulate API calls
+        unifi_client (UnifiClient): Configured UniFi client instance for testing
+        mock_system_response (dict): Predefined mock system health response data
+    
+    Assertions:
+        - Returned health object is of type SystemHealth
+        - System status is "ok"
+        - CPU usage is 25.5%
+        - Memory usage is 60.2%
+        - Temperature is 45.3 degrees
+    """
     mock_response = Mock()
     mock_response.json.return_value = mock_system_response
     mock_response.status_code = 200

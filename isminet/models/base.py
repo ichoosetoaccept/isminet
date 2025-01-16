@@ -85,7 +85,22 @@ class BaseResponse(BaseModel, Generic[T]):
     data: Union[T, List[T]] = Field(default_factory=lambda: [])
 
     def validate_data(self) -> None:
-        """Validate the data field against the type argument T."""
+        """
+        Validate the data field against the specified generic type argument.
+        
+        This method ensures that the `data` attribute conforms to the expected type defined during BaseResponse instantiation. It handles both single instances and lists of instances.
+        
+        Parameters:
+            None
+        
+        Raises:
+            ValidationError: If the data does not match the expected type or cannot be converted to it.
+        
+        Notes:
+            - Skips validation if no generic type is specified
+            - Supports validation of both single items and lists of items
+            - Uses model type constructor to validate and potentially convert input data
+        """
         if not hasattr(self, "__orig_bases__"):
             return
 

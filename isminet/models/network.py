@@ -36,7 +36,17 @@ class DHCPConfiguration(ValidationMixin, UnifiBaseModel):
 
     @model_validator(mode="after")
     def validate_dhcp_range(self) -> "DHCPConfiguration":
-        """Validate DHCP range if server mode is enabled."""
+        """
+        Validates the DHCP range configuration when server mode is enabled.
+        
+        Ensures that both start and end IP addresses are specified when DHCP server mode is active.
+        
+        Raises:
+            ValueError: If DHCP server mode is enabled but start or end IP addresses are not set.
+        
+        Returns:
+            DHCPConfiguration: The validated configuration instance.
+        """
         if self.mode == DHCPMode.SERVER and self.enabled:
             if not all([self.start, self.end]):
                 raise ValueError(
@@ -64,7 +74,19 @@ class VLANConfiguration(ValidationMixin, NetworkMixin, UnifiBaseModel):
 
     @model_validator(mode="after")
     def validate_ports(self) -> "VLANConfiguration":
-        """Validate port configurations."""
+        """
+        Validate that ports are not simultaneously tagged and untagged.
+        
+        This method checks for port configuration conflicts by ensuring no port is present in both
+        `tagged_ports` and `untagged_ports` lists. If any common ports are found, it raises a
+        `ValueError` with details of the conflicting ports.
+        
+        Returns:
+            VLANConfiguration: The current VLAN configuration instance after validation.
+        
+        Raises:
+            ValueError: If any port is configured as both tagged and untagged.
+        """
         if self.tagged_ports and self.untagged_ports:
             common_ports = set(self.tagged_ports) & set(self.untagged_ports)
             if common_ports:
@@ -104,7 +126,26 @@ class NetworkConfiguration(ValidationMixin, UnifiBaseModel):
     @field_validator("purpose")
     @classmethod
     def validate_purpose(cls, v: str) -> str:
-        """Validate network purpose."""
+        """
+        Validate the network purpose against a predefined set of valid options.
+        
+        Parameters:
+            cls (type): The class on which the validator is called (automatically passed by Pydantic).
+            v (str): The network purpose to validate.
+        
+        Returns:
+            str: The validated network purpose.
+        
+        Raises:
+            ValueError: If the provided purpose is not one of the valid options ('corporate', 'guest', 'iot').
+        
+        Example:
+            # Valid usage
+            purpose = validate_purpose(NetworkConfiguration, 'corporate')  # Returns 'corporate'
+            
+            # Invalid usage
+            purpose = validate_purpose(NetworkConfiguration, 'invalid')  # Raises ValueError
+        """
         valid_purposes = {"corporate", "guest", "iot"}
         if v not in valid_purposes:
             raise ValueError(f"Purpose must be one of: {', '.join(valid_purposes)}")
@@ -112,7 +153,19 @@ class NetworkConfiguration(ValidationMixin, UnifiBaseModel):
 
     @model_validator(mode="after")
     def validate_vlan_config(self) -> "NetworkConfiguration":
-        """Validate VLAN configuration."""
+        """
+        Validate the VLAN configuration for a network.
+        
+        This method performs two key validation checks:
+        1. Ensures VLAN configurations are provided when VLANs are enabled
+        2. Checks that no duplicate VLAN IDs exist in the configuration
+        
+        Raises:
+            ValueError: If VLANs are enabled without configurations or if duplicate VLAN IDs are detected
+        
+        Returns:
+            NetworkConfiguration: The validated network configuration instance
+        """
         if self.vlan_enabled and not self.vlans:
             raise ValueError(
                 "VLAN configurations must be provided when VLAN is enabled"

@@ -69,7 +69,24 @@ VALID_SYSTEM_STATUS = {
 
 
 def test_system_health():
-    """Test SystemHealth validation."""
+    """
+    Test the validation rules for the SystemHealth model.
+    
+    This test function verifies the behavior of the SystemHealth model by:
+    - Checking successful instantiation with valid data
+    - Asserting correct attribute values
+    - Validating error handling for various invalid configurations
+    
+    Test scenarios include:
+    - Successful creation with valid system health data
+    - Rejection of invalid status values
+    - Preventing timestamp inconsistencies
+    - Blocking out-of-bounds CPU usage
+    - Preventing negative memory usage
+    
+    Raises:
+        ValidationError: When model constraints are violated
+    """
     # Test valid configuration
     health = SystemHealth(**VALID_SYSTEM_HEALTH)
     assert health.subsystem == "network"
@@ -94,7 +111,24 @@ def test_system_health():
 
 
 def test_process_info():
-    """Test ProcessInfo validation."""
+    """
+    Test the validation rules for the ProcessInfo model.
+    
+    This test function verifies the behavior of the ProcessInfo model by:
+    - Validating a correct process information configuration
+    - Ensuring validation errors are raised for:
+      * Invalid process ID (zero or negative)
+      * CPU usage exceeding 100%
+      * Negative memory usage
+      * Invalid thread count (zero or negative)
+      * Negative memory (RSS and VSZ) values
+    
+    Parameters:
+        None
+    
+    Raises:
+        ValidationError: When any of the ProcessInfo model constraints are violated
+    """
     # Test valid configuration
     process = ProcessInfo(**VALID_PROCESS_INFO)
     assert process.pid == 1234
@@ -125,7 +159,22 @@ def test_process_info():
 
 
 def test_service_status():
-    """Test ServiceStatus validation."""
+    """
+    Test the validation of the ServiceStatus model.
+    
+    This test function verifies the behavior of the ServiceStatus model under various scenarios:
+    - Validates a valid service status configuration
+    - Checks handling of invalid service status
+    - Ensures proper validation of process ID (PID)
+    - Validates restart count constraints
+    - Confirms correct handling of stopped services with null PID
+    
+    Parameters:
+        None
+    
+    Raises:
+        ValidationError: When invalid configurations are provided
+    """
     # Test valid configuration
     service = ServiceStatus(**VALID_SERVICE_STATUS)
     assert service.name == "unifi"
@@ -158,7 +207,25 @@ def test_service_status():
 
 
 def test_system_status():
-    """Test SystemStatus validation."""
+    """
+    Test the validation of the SystemStatus model.
+    
+    This test function verifies the SystemStatus model's behavior under various scenarios:
+    - Validates a complete, valid system status configuration
+    - Checks device type, version, and component list lengths
+    - Tests validation errors for:
+      * Invalid version strings
+      * Invalid update version strings
+      * Out-of-bounds storage usage (> 100%)
+      * Negative storage available values
+    - Confirms handling of minimal configurations with optional components set to None
+    
+    Parameters:
+        None
+    
+    Raises:
+        ValidationError: When invalid data is provided to the SystemStatus model
+    """
     # Test valid configuration
     status = SystemStatus(**VALID_SYSTEM_STATUS)
     assert status.device_type == DeviceType.UDM
