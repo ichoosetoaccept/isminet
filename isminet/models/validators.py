@@ -53,6 +53,24 @@ def validate_ip(v: Optional[str]) -> Optional[str]:
         )
 
 
+def validate_ip_list(v: Optional[List[str]]) -> Optional[List[str]]:
+    """Validate list of IPv4 addresses."""
+    if v is None:
+        return None
+    validated = []
+    for addr in v:
+        try:
+            IPv4Address(addr)
+            validated.append(addr)
+        except ValueError:
+            raise PydanticCustomError(
+                "invalid_ip",
+                "Invalid IPv4 address: {addr}",
+                {"addr": addr},
+            )
+    return validated
+
+
 def validate_ipv6_list(v: Optional[List[str]]) -> Optional[List[str]]:
     """Validate list of IPv6 addresses."""
     if v is None:

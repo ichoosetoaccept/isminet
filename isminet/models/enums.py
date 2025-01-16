@@ -1,4 +1,4 @@
-"""Enums for UniFi Network models."""
+"""Enumerations for UniFi Network models."""
 
 from enum import Enum
 
@@ -40,8 +40,24 @@ class PoEMode(str, Enum):
 
 
 class LedOverride(str, Enum):
-    """LED override settings."""
+    """LED override modes."""
 
     ON = "on"
     OFF = "off"
     DEFAULT = "default"
+
+
+class DHCPMode(str, Enum):
+    """DHCP server modes."""
+
+    DISABLED = "disabled"
+    SERVER = "server"
+    RELAY = "relay"
+
+
+class IGMPMode(str, Enum):
+    """IGMP modes."""
+
+    SNOOPING = "snooping"
+    QUERIER = "querier"
+    PROXY = "proxy"

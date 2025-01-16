@@ -20,6 +20,12 @@ from .wireless import (
     NetworkProfile,
     WLANConfiguration,
 )
+from .system import (
+    SystemHealth,
+    ProcessInfo,
+    ServiceStatus,
+    SystemStatus,
+)
 
 __all__ = [
     "UnifiBaseModel",
@@ -36,4 +42,8 @@ __all__ = [
     "RadioSettings",
     "NetworkProfile",
     "WLANConfiguration",
+    "SystemHealth",
+    "ProcessInfo",
+    "ServiceStatus",
+    "SystemStatus",
 ]
