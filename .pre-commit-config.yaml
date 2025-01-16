@@ -3,7 +3,7 @@
 #
 # Run pre-commit run --all-files to manually run hooks on all files
 # You can update your hooks to the latest version automatically by running pre-commit autoupdate. By default, this will bring the hooks to the latest tag on the default branch.
-fail_fast: true
+# fail_fast: true
 minimum_pre_commit_version: 4.0.1
 repos:
 -   repo: meta

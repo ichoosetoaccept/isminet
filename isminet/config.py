@@ -17,11 +17,7 @@ class APIVersion(str, Enum):
     @property
     def path(self) -> str:
         """Get API path for version."""
-        return (
-            f"/proxy/network/{self.value}"
-            if self == APIVersion.V1
-            else "/proxy/network/api/s"
-        )
+        return "/proxy/network/api"
 
 
 class APIConfig(BaseSettings):
