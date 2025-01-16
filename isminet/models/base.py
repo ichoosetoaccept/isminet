@@ -1,6 +1,16 @@
 """Base models for the UniFi Network API."""
 
-from typing import Generic, List, Optional, TypeVar, Union, get_args
+from typing import (
+    Generic,
+    List,
+    Optional,
+    TypeVar,
+    get_args,
+    get_origin,
+    Dict,
+    Any,
+    Union,
+)
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -79,26 +89,22 @@ class Meta(BaseModel):
 
 
 class BaseResponse(BaseModel, Generic[T]):
-    """Base response model for UniFi Network API responses."""
+    """Base response model for UniFi Network API."""
 
-    meta: Meta = Field(default_factory=Meta)
-    data: Union[T, List[T]] = Field(default_factory=lambda: [])
+    model_config = ConfigDict(extra="allow")
 
-    def validate_data(self) -> None:
-        """Validate the data field against the type argument T."""
-        if not hasattr(self, "__orig_bases__"):
-            return
+    meta: Dict[str, Any]
+    data: Union[T, List[T]]
 
-        model_type = get_args(self.__orig_bases__[0])[0]
-        if not self.data:
-            return
-
-        if isinstance(self.data, list):
-            for item in self.data:
-                if not isinstance(item, model_type):
-                    model_type(**item)
-        elif not isinstance(self.data, model_type):
-            model_type(**self.data)
+    @classmethod
+    def get_data_type(cls) -> type:
+        """Get the type of the data field."""
+        for base in cls.__orig_bases__:  # type: ignore
+            if get_origin(base) is BaseResponse:
+                args = get_args(base)
+                if args:
+                    return args[0]
+        raise TypeError("Could not determine data type for BaseResponse")
 
 
 class StatisticsMixin(UnifiBaseModel):

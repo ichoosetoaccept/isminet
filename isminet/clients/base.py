@@ -148,11 +148,13 @@ class BaseAPIClient:
         except (ConnectionError, Timeout):
             raise
         except ValidationError as e:
-            raise ResponseValidationError(f"Response validation failed: {str(e)}", e)
+            raise ResponseValidationError(
+                f"Response validation failed: {str(e)}", e
+            ) from e
         except (AuthenticationError, PermissionError, NotFoundError):
             raise
         except Exception as e:
-            raise APIError(f"Unexpected error: {str(e)}")
+            raise APIError(f"Unexpected error: {str(e)}") from e
 
     def get(
         self,
