@@ -1,6 +1,7 @@
 # isminet
 
 [![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit)](https://github.com/pre-commit/pre-commit)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A Python tool for analyzing and optimizing UniFi Network deployments, with a focus on Apple device compatibility and best practices.
 
@@ -20,7 +21,7 @@ This project serves two main purposes:
   - `test_models.py`: Tests for data models
 - `docs/`: Documentation
   - `unifi_network_api.md`: UniFi Network API documentation
-  - `api_responses/`: Example API responses
+  - `api_responses/`: Local directory for real API responses (not tracked in git)
   - `apple_recommendations.md`: Apple's Wi-Fi recommendations checklist
 
 ## Features
