@@ -1,0 +1,137 @@
+direction: right
+
+# Core Components
+core: {
+  models: Models {
+    shape: package
+    style.multiple: true
+
+    base: {
+      UnifiBaseModel: {
+        shape: class
+      }
+      ValidationMixin: {
+        shape: class
+      }
+      NetworkMixin: {
+        shape: class
+      }
+      BaseResponse: {
+        shape: class
+      }
+    }
+
+    device_models: {
+      Device: {
+        shape: class
+      }
+      Client: {
+        shape: class
+      }
+      PortStats: {
+        shape: class
+      }
+      WifiStats: {
+        shape: class
+      }
+    }
+
+    wireless_models: {
+      style.stroke-dash: 5
+      WifiMixin: {
+        shape: class
+      }
+      NetworkProfile: {
+        shape: class
+      }
+      RadioSettings: {
+        shape: class
+      }
+    }
+  }
+
+  clients: Clients {
+    shape: package
+    style.multiple: true
+
+    BaseClient: {
+      shape: class
+    }
+    UnifiClient: {
+      shape: class
+      style.stroke-dash: 5
+    }
+  }
+
+  checks: Checks {
+    shape: package
+    style.multiple: true
+    style.stroke-dash: 5
+
+    AppleRecommendationCheck: {
+      shape: class
+      style.stroke-dash: 5
+    }
+  }
+}
+
+# Entry Points and Scripts
+scripts: {
+  fetch_api_responses: {
+    shape: rectangle
+    label: "fetch_api_responses.py\n(Development Tool)"
+  }
+
+  future_cli: {
+    shape: rectangle
+    style.stroke-dash: 5
+    label: "CLI Tool\n(Planned)"
+  }
+}
+
+# External Systems
+external: {
+  UniFi Network API: {
+    shape: cloud
+  }
+
+  docs: Documentation {
+    api_responses: {
+      shape: cylinder
+      label: "Example API\nResponses"
+    }
+  }
+}
+
+# Data Flow
+scripts.fetch_api_responses -> core.clients.BaseClient: "1. Uses"
+core.clients.BaseClient -> external.UniFi Network API: "2. Fetches Data"
+external.UniFi Network API -> core.clients.BaseClient: "3. JSON Response"
+core.clients.BaseClient -> external.docs.api_responses: "4. Saves Examples"
+external.docs.api_responses -> core.models: "5. Used to Build\nPydantic Models"
+
+# Inheritance and Usage
+core.models.base.UnifiBaseModel <- core.models.device_models.Device: Inherits
+core.models.base.ValidationMixin <- core.models.device_models.Device: Uses
+core.clients.BaseClient <- core.clients.UnifiClient: "Will Inherit"
+core.models <- core.checks.AppleRecommendationCheck: "Will Use"
+
+# Future Flow
+scripts.future_cli -> core.clients.UnifiClient: "Will Use"
+core.clients.UnifiClient -> core.checks: "Will Use"
+core.checks -> core.models: "Will Validate"
+
+# Legend
+legend: {
+  Implemented: {
+    shape: package
+  }
+  In Progress: {
+    shape: package
+    style.stroke-dash: 5
+  }
+  Data Flow: {
+    shape: text
+    label: "Numbers show sequence"
+  }
+}
