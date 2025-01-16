@@ -35,11 +35,12 @@
   - ✅ PortStats model
   - ✅ WifiStats model
   - ✅ Comprehensive test coverage
-- 🔄 Wireless settings models
+- ✅ Wireless settings models
   - ✅ WifiMixin
-  - 🔄 Network profiles
-  - 🔄 Radio settings
-  - 📦 WLAN configuration
+  - ✅ RadioSettings with channel validation
+  - ✅ NetworkProfile with security validation
+  - ✅ WLANConfiguration
+  - ✅ Comprehensive test coverage
 - 📦 Network configuration models
 - 📦 System status models
 
@@ -115,7 +116,7 @@ isminet/
 ├── models/             # [ACTIVE]
 │   ├── base.py        # ✅ Base models and mixins
 │   ├── devices.py     # ✅ Device configuration models
-│   ├── wireless.py    # 🔄 Wireless settings models
+│   ├── wireless.py    # ✅ Wireless settings models
 │   └── network.py     # 📦 Planned network settings models
 ├── clients/           # [IN PROGRESS]
 │   ├── base.py       # ✅ Base API client
@@ -153,17 +154,16 @@ isminet/
 7. ✅ Device configuration models
 8. ✅ Complex validation test suite
 9. ✅ Base API client with retry logic
+10. ✅ Wireless settings models with tests
 
 ### Current Focus
-1. 🔄 Wireless settings models
-2. 🔄 UniFi client implementation
-3. 🔄 Error handling improvements
+1. 🔄 UniFi client implementation
+2. 🔄 Error handling improvements
 
 ### Next Up
-1. 📅 Complete wireless settings models
-2. 📅 Network configuration models
-3. 📅 System status models
-4. 📅 Check framework design
+1. 📅 Network configuration models
+2. 📅 System status models
+3. 📅 Check framework design
 
 ### Blockers & Dependencies
 - None currently
@@ -172,6 +172,7 @@ isminet/
 - Base models working well with test API responses
 - Need to improve error handling in base client
 - Should start designing check framework soon
+- Wireless models complete with comprehensive validation
 
 ## Future Enhancements
 

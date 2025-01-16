@@ -15,6 +15,11 @@ from .enums import (
     RadioProto,
 )
 from .sites import Site
+from .wireless import (
+    RadioSettings,
+    NetworkProfile,
+    WLANConfiguration,
+)
 
 __all__ = [
     "UnifiBaseModel",
@@ -28,4 +33,7 @@ __all__ = [
     "RadioType",
     "RadioProto",
     "Site",
+    "RadioSettings",
+    "NetworkProfile",
+    "WLANConfiguration",
 ]

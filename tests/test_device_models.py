@@ -1,8 +1,9 @@
-"""Tests for device-related models."""
+"""Tests for device models."""
 
 import pytest
 from pydantic import ValidationError
-from isminet.models.devices import Device, Client, DeviceType, LedOverride
+from isminet.models.devices import Device, Client
+from isminet.models.enums import DeviceType, LedOverride
 from isminet.models.version import VersionInfo
 
 
