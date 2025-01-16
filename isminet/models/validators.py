@@ -4,6 +4,7 @@ from typing import Optional, List
 from ipaddress import IPv4Address, IPv6Address
 import re
 from pydantic import Field
+from pydantic_core import PydanticCustomError
 
 MAC_PATTERN = re.compile(r"^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$")
 
@@ -13,7 +14,11 @@ def validate_mac(v: Optional[str]) -> Optional[str]:
     if v is None:
         return None
     if not MAC_PATTERN.match(v):
-        raise ValueError("Invalid MAC address format")
+        raise PydanticCustomError(
+            "invalid_mac",
+            "Invalid MAC address format",
+            {},
+        )
     return v.lower()
 
 
@@ -24,7 +29,11 @@ def validate_mac_list(v: Optional[List[str]]) -> Optional[List[str]]:
     validated = []
     for mac in v:
         if not MAC_PATTERN.match(mac):
-            raise ValueError(f"Invalid MAC address format: {mac}")
+            raise PydanticCustomError(
+                "invalid_mac",
+                "Invalid MAC address format: {mac}",
+                {"mac": mac},
+            )
         validated.append(mac.lower())
     return validated
 
@@ -36,8 +45,12 @@ def validate_ip(v: Optional[str]) -> Optional[str]:
     try:
         IPv4Address(v)
         return v
-    except ValueError as e:
-        raise ValueError("Invalid IPv4 address") from e
+    except ValueError:
+        raise PydanticCustomError(
+            "invalid_ip",
+            "Invalid IPv4 address",
+            {},
+        )
 
 
 def validate_ipv6_list(v: Optional[List[str]]) -> Optional[List[str]]:
@@ -49,17 +62,25 @@ def validate_ipv6_list(v: Optional[List[str]]) -> Optional[List[str]]:
         try:
             IPv6Address(addr)
             validated.append(addr)
-        except ValueError as e:
-            raise ValueError(f"Invalid IPv6 address: {addr}") from e
+        except ValueError:
+            raise PydanticCustomError(
+                "invalid_ipv6",
+                "Invalid IPv6 address: {addr}",
+                {"addr": addr},
+            )
     return validated
 
 
 def validate_version(v: Optional[str]) -> Optional[str]:
-    """Validate version string format."""
+    """Validate version format."""
     if v is None:
         return None
-    if not re.match(r"^\d+\.\d+\.\d+(?:-[a-zA-Z0-9]+)?$", v):
-        raise ValueError("Invalid version format")
+    if not re.match(r"^\d+\.\d+\.\d+$", v):
+        raise PydanticCustomError(
+            "invalid_version",
+            "Invalid version format",
+            {},
+        )
     return v
 
 

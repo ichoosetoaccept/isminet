@@ -1,32 +1,31 @@
 """UniFi Network API models."""
 
-from .base import Meta, BaseResponse
+from .base import UnifiBaseModel
 from .devices import (
-    Client,
     Device,
+    Client,
+    PortStats,
+    WifiStats,
+)
+from .enums import (
     DeviceType,
     LedOverride,
     PoEMode,
-    PortStats,
-    RadioProto,
     RadioType,
-    WifiStats,
+    RadioProto,
 )
 from .sites import Site
-from .version import VersionInfo
 
 __all__ = [
-    "BaseResponse",
-    "Client",
+    "UnifiBaseModel",
     "Device",
+    "Client",
+    "PortStats",
+    "WifiStats",
     "DeviceType",
     "LedOverride",
-    "Meta",
     "PoEMode",
-    "PortStats",
-    "RadioProto",
     "RadioType",
+    "RadioProto",
     "Site",
-    "VersionInfo",
-    "WifiStats",
 ]

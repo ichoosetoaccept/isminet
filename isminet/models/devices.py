@@ -1,15 +1,14 @@
 """Device models for the UniFi Network API."""
 
-from typing import Optional, List
-from enum import Enum
-from pydantic import Field, model_validator, field_validator
+from typing import Optional, List, Any
+from pydantic import Field, field_validator, model_validator, ValidationError
+from pydantic_core import PydanticCustomError
 
 from .base import (
     UnifiBaseModel,
     StatisticsMixin,
     DeviceBaseMixin,
     NetworkMixin,
-    SystemStatsMixin,
     WifiMixin,
     TimestampMixin,
     PoEMixin,
@@ -24,53 +23,25 @@ from .validators import (
     validate_mac,
     validate_mac_list,
     validate_ip,
-    validate_ipv6_list,
     validate_version,
 )
-
-
-class RadioType(str, Enum):
-    """Radio types."""
-
-    NG = "ng"  # 2.4 GHz
-    NA = "na"  # 5 GHz
-    _6E = "6e"  # 6 GHz
-
-
-class RadioProto(str, Enum):
-    """Radio protocols."""
-
-    NG = "ng"  # 802.11n
-    AC = "ac"  # 802.11ac
-    AX = "ax"  # 802.11ax (WiFi 6)
-    BE = "be"  # 802.11be (WiFi 7)
-
-
-class DeviceType(str, Enum):
-    """Device types."""
-
-    UAP = "uap"  # UniFi Access Point
-    USW = "usw"  # UniFi Switch
-    UGW = "ugw"  # UniFi Gateway
-    UDM = "udm"  # UniFi Dream Machine
-    UDMPRO = "udm-pro"  # UniFi Dream Machine Pro
-
-
-class PoEMode(str, Enum):
-    """PoE modes."""
-
-    OFF = "off"
-    AUTO = "auto"
-    PASV24 = "pasv24"
-    AUTO_PLUS = "auto+"
-
-
-class LedOverride(str, Enum):
-    """LED override settings."""
-
-    ON = "on"
-    OFF = "off"
-    DEFAULT = "default"
+from .device_components import (
+    DeviceNetwork,
+    DeviceWireless,
+    DeviceSecurity,
+    DeviceSystem,
+)
+from .client_components import (
+    ClientNetwork,
+    ClientTracking,
+    ClientGuest,
+    ClientDNS,
+)
+from .enums import (
+    RadioType,
+    RadioProto,
+    DeviceType,
+)
 
 
 class PortStats(
@@ -198,30 +169,12 @@ class Client(
 ):
     """UniFi Network client device."""
 
-    hostname: str = Field(description="Client hostname")
-    last_ip: Optional[str] = Field(None, description="IP address")
-    is_wired: bool = Field(description="Whether client is wired")
     first_seen: int = Field(description="First seen timestamp")
     wifi_stats: Optional[WifiStats] = Field(
         None, description="WiFi statistics if wireless client"
     )
-    hostname_source: Optional[str] = Field(None, description="Hostname source")
-    use_fixedip: Optional[bool] = Field(None, description="Whether using fixed IP")
-    fixed_ip: Optional[str] = Field(None, description="Fixed IP address")
-    ipv6_addresses: Optional[List[str]] = Field(None, description="IPv6 addresses")
-    noted: Optional[bool] = Field(None, description="Whether client is noted")
-    satisfaction_avg: Optional[dict] = Field(
-        None, description="Average satisfaction stats"
-    )
-    gw_mac: Optional[str] = Field(None, description="Gateway MAC address")
-    gw_vlan: Optional[int] = Field(None, description="Gateway VLAN ID", ge=0, le=4095)
-    dhcpend_time: Optional[int] = Field(None, description="DHCP lease end time")
     priority: Optional[int] = Field(None, description="Client priority")
     anomalies: Optional[int] = Field(None, description="Client anomalies")
-    local_dns_record_enabled: Optional[bool] = Field(
-        None, description="Whether local DNS record is enabled"
-    )
-    local_dns_record: Optional[str] = Field(None, description="Local DNS record")
     virtual_network_override_enabled: Optional[bool] = Field(
         None, description="Whether virtual network override is enabled"
     )
@@ -231,44 +184,130 @@ class Client(
     eagerly_discovered: Optional[bool] = Field(
         None, description="Whether client was eagerly discovered"
     )
-    wired_rate_mbps: Optional[int] = Field(
-        None, description="Wired connection speed in Mbps", ge=0
+    satisfaction_avg: Optional[dict] = Field(
+        None, description="Average satisfaction stats"
     )
-    sw_depth: Optional[int] = Field(None, description="Switch depth", ge=0)
-    sw_port: Optional[int] = Field(None, description="Switch port number", ge=1)
-    sw_mac: Optional[str] = Field(None, description="Switch MAC address")
-    uptime_by_uap: Optional[int] = Field(None, description="Uptime tracked by AP", ge=0)
-    uptime_by_usw: Optional[int] = Field(
-        None, description="Uptime tracked by switch", ge=0
-    )
-    uptime_by_ugw: Optional[int] = Field(
-        None, description="Uptime tracked by gateway", ge=0
-    )
-    last_seen_by_uap: Optional[int] = Field(None, description="Last seen by AP")
-    last_seen_by_usw: Optional[int] = Field(None, description="Last seen by switch")
-    last_seen_by_ugw: Optional[int] = Field(None, description="Last seen by gateway")
-    last_reachable_by_gw: Optional[int] = Field(
-        None, description="Last reachable by gateway"
-    )
-    is_guest_by_uap: Optional[bool] = Field(
-        None, description="Guest status tracked by AP"
-    )
-    is_guest_by_usw: Optional[bool] = Field(
-        None, description="Guest status tracked by switch"
-    )
-    is_guest_by_ugw: Optional[bool] = Field(
-        None, description="Guest status tracked by gateway"
-    )
+    ip: Optional[str] = Field(None, description="IP address")
 
-    _validate_mac = field_validator("mac", "gw_mac", "sw_mac")(validate_mac)
-    _validate_ip = field_validator("ip", "last_ip", "fixed_ip")(validate_ip)
-    _validate_ipv6_list = field_validator("ipv6_addresses")(validate_ipv6_list)
+    # Component models for better SRP adherence
+    network: Optional[ClientNetwork] = Field(None, description="Network configuration")
+    tracking: Optional[ClientTracking] = Field(None, description="Tracking information")
+    guest: Optional[ClientGuest] = Field(None, description="Guest configuration")
+    dns: Optional[ClientDNS] = Field(None, description="DNS configuration")
+
+    _validate_mac = field_validator("mac")(validate_mac)
+    _validate_ip = field_validator("ip")(validate_ip)
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate_component_fields(cls, data: dict) -> dict:
+        """Validate fields that will be moved to component models."""
+        # Check required fields
+        required_fields = {"mac", "first_seen"}
+        missing_fields = required_fields - data.keys()
+        if missing_fields:
+            raise PydanticCustomError(
+                "missing_required_fields",
+                "Missing required fields: {missing_fields}",
+                {"missing_fields": list(missing_fields)},
+            )
+
+        # Extract component data
+        network_data = {
+            k: v for k, v in data.items() if k in ClientNetwork.__annotations__
+        }
+        tracking_data = {
+            k: v for k, v in data.items() if k in ClientTracking.__annotations__
+        }
+        guest_data = {k: v for k, v in data.items() if k in ClientGuest.__annotations__}
+        dns_data = {k: v for k, v in data.items() if k in ClientDNS.__annotations__}
+
+        # Validate component data
+        try:
+            if network_data:
+                ClientNetwork(**network_data)
+            if tracking_data:
+                ClientTracking(**tracking_data)
+            if guest_data:
+                ClientGuest(**guest_data)
+            if dns_data:
+                ClientDNS(**dns_data)
+        except ValidationError:
+            raise PydanticCustomError(
+                "invalid_component_data",
+                "Invalid component data",
+                {},
+            )
+
+        return data
+
+    def __init__(self, **data):
+        """Initialize client with component models."""
+        # Extract component data
+        network_data = {
+            k: v for k, v in data.items() if k in ClientNetwork.__annotations__
+        }
+        tracking_data = {
+            k: v for k, v in data.items() if k in ClientTracking.__annotations__
+        }
+        guest_data = {k: v for k, v in data.items() if k in ClientGuest.__annotations__}
+        dns_data = {k: v for k, v in data.items() if k in ClientDNS.__annotations__}
+
+        # Remove component data from main data
+        for k in (
+            network_data.keys()
+            | tracking_data.keys()
+            | guest_data.keys()
+            | dns_data.keys()
+        ):
+            data.pop(k, None)
+
+        # Initialize component models
+        if network_data:
+            data["network"] = ClientNetwork(**network_data)
+        if tracking_data:
+            data["tracking"] = ClientTracking(**tracking_data)
+        if guest_data:
+            data["guest"] = ClientGuest(**guest_data)
+        if dns_data:
+            data["dns"] = ClientDNS(**dns_data)
+
+        super().__init__(**data)
+
+    def __getattr__(self, name: str) -> Any:
+        """Forward attribute access to component models."""
+        # Try network component
+        if name in ClientNetwork.__annotations__:
+            if self.network is not None:
+                return getattr(self.network, name)
+            return None
+
+        # Try tracking component
+        if name in ClientTracking.__annotations__:
+            if self.tracking is not None:
+                return getattr(self.tracking, name)
+            return None
+
+        # Try guest component
+        if name in ClientGuest.__annotations__:
+            if self.guest is not None:
+                return getattr(self.guest, name)
+            return None
+
+        # Try dns component
+        if name in ClientDNS.__annotations__:
+            if self.dns is not None:
+                return getattr(self.dns, name)
+            return None
+
+        raise AttributeError(
+            f"{self.__class__.__name__!r} object has no attribute {name!r}"
+        )
 
 
 class Device(
     DeviceBaseMixin,
     StatisticsMixin,
-    SystemStatsMixin,
     DeviceIdentificationMixin,
     VersionMixin,
     ValidationMixin,
@@ -280,64 +319,132 @@ class Device(
     port_table: List[PortStats] = Field(
         default_factory=list, description="Port statistics"
     )
-    adopted: Optional[bool] = Field(None, description="Whether device is adopted")
-    led_override: Optional[LedOverride] = Field(
-        None, description="LED override setting"
-    )
-    inform_url: Optional[str] = Field(None, description="Inform URL")
-    inform_ip: Optional[str] = Field(None, description="Inform IP address")
-    config_network: Optional[dict] = Field(None, description="Network configuration")
-    ethernet_table: Optional[List[dict]] = Field(None, description="Ethernet table")
-    radio_table: Optional[List[dict]] = Field(None, description="Radio table")
-    vap_table: Optional[List[dict]] = Field(None, description="VAP table")
-    uplink: Optional[dict] = Field(None, description="Uplink information")
-    system_stats: Optional[dict] = Field(None, description="System statistics")
-    stat: Optional[dict] = Field(None, description="Device statistics")
     bytes: Optional[int] = Field(None, description="Total bytes", ge=0)
-    num_sta: Optional[int] = Field(
-        None, description="Number of connected clients", ge=0
-    )
-    user_num_sta: Optional[int] = Field(
-        None, description="Number of user clients", ge=0
-    )
-    guest_num_sta: Optional[int] = Field(
-        None, description="Number of guest clients", ge=0
-    )
-    state: Optional[int] = Field(None, description="Device state")
-    upgradable: Optional[bool] = Field(None, description="Whether device is upgradable")
-    discovered_via: Optional[str] = Field(None, description="How device was discovered")
-    uplink_table: Optional[List[dict]] = Field(None, description="Uplink table")
-    hw_caps: Optional[int] = Field(None, description="Hardware capabilities")
-    guest_token: Optional[str] = Field(None, description="Guest authentication token")
-    x_ssh_hostkey: Optional[str] = Field(None, description="SSH host key")
-    x_fingerprint: Optional[str] = Field(None, description="Device fingerprint")
-    x_has_ssh_hostkey: Optional[bool] = Field(
-        None, description="Whether device has SSH host key"
-    )
-    unsupported: Optional[bool] = Field(
-        None, description="Whether device is unsupported"
-    )
-    unsupported_reason: Optional[int] = Field(
-        None, description="Reason for being unsupported"
-    )
     device_id: Optional[str] = Field(None, description="Device identifier")
-    state_code: Optional[int] = Field(None, description="Device state code")
-    x_aes_gcm: Optional[bool] = Field(None, description="Whether AES-GCM is supported")
-    x_has_default_route_distance: Optional[bool] = Field(
-        None, description="Whether default route distance is set"
+
+    # Component models for better SRP adherence
+    network: Optional[DeviceNetwork] = Field(None, description="Network configuration")
+    wireless: Optional[DeviceWireless] = Field(
+        None, description="Wireless configuration"
     )
-    x_inform_authkey: Optional[str] = Field(
-        None, description="Inform authentication key"
+    security: Optional[DeviceSecurity] = Field(
+        None, description="Security configuration"
     )
+    system: Optional[DeviceSystem] = Field(None, description="System information")
 
     _validate_mac = field_validator("mac")(validate_mac)
-    _validate_ip = field_validator("ip", "inform_ip")(validate_ip)
     _validate_version = field_validator("version", "required_version")(validate_version)
 
-    @field_validator("inform_url")
+    @model_validator(mode="before")
     @classmethod
-    def validate_inform_url(cls, v: Optional[str]) -> Optional[str]:
-        """Validate inform URL format."""
-        if v is not None and not v.startswith(("http://", "https://")):
-            raise ValueError("Inform URL must start with http:// or https://")
-        return v
+    def validate_component_fields(cls, data: dict) -> dict:
+        """Validate fields that will be moved to component models."""
+        # Check required fields
+        required_fields = {"mac", "type", "version"}
+        missing_fields = required_fields - data.keys()
+        if missing_fields:
+            raise PydanticCustomError(
+                "missing_required_fields",
+                "Missing required fields: {missing_fields}",
+                {"missing_fields": list(missing_fields)},
+            )
+
+        # Extract component data
+        network_data = {
+            k: v for k, v in data.items() if k in DeviceNetwork.__annotations__
+        }
+        wireless_data = {
+            k: v for k, v in data.items() if k in DeviceWireless.__annotations__
+        }
+        security_data = {
+            k: v for k, v in data.items() if k in DeviceSecurity.__annotations__
+        }
+        system_data = {
+            k: v for k, v in data.items() if k in DeviceSystem.__annotations__
+        }
+
+        # Validate component data
+        try:
+            if network_data:
+                DeviceNetwork(**network_data)
+            if wireless_data:
+                DeviceWireless(**wireless_data)
+            if security_data:
+                DeviceSecurity(**security_data)
+            if system_data:
+                DeviceSystem(**system_data)
+        except ValidationError:
+            raise PydanticCustomError(
+                "invalid_component_data",
+                "Invalid component data",
+                {},
+            )
+
+        return data
+
+    def __init__(self, **data):
+        """Initialize device with component models."""
+        # Extract component data
+        network_data = {
+            k: v for k, v in data.items() if k in DeviceNetwork.__annotations__
+        }
+        wireless_data = {
+            k: v for k, v in data.items() if k in DeviceWireless.__annotations__
+        }
+        security_data = {
+            k: v for k, v in data.items() if k in DeviceSecurity.__annotations__
+        }
+        system_data = {
+            k: v for k, v in data.items() if k in DeviceSystem.__annotations__
+        }
+
+        # Remove component data from main data
+        for k in (
+            network_data.keys()
+            | wireless_data.keys()
+            | security_data.keys()
+            | system_data.keys()
+        ):
+            data.pop(k, None)
+
+        # Initialize component models
+        if network_data:
+            data["network"] = DeviceNetwork(**network_data)
+        if wireless_data:
+            data["wireless"] = DeviceWireless(**wireless_data)
+        if security_data:
+            data["security"] = DeviceSecurity(**security_data)
+        if system_data:
+            data["system"] = DeviceSystem(**system_data)
+
+        super().__init__(**data)
+
+    def __getattr__(self, name: str) -> Any:
+        """Forward attribute access to component models."""
+        # Try network component
+        if name in DeviceNetwork.__annotations__:
+            if self.network is not None:
+                return getattr(self.network, name)
+            return None
+
+        # Try wireless component
+        if name in DeviceWireless.__annotations__:
+            if self.wireless is not None:
+                return getattr(self.wireless, name)
+            return None
+
+        # Try security component
+        if name in DeviceSecurity.__annotations__:
+            if self.security is not None:
+                return getattr(self.security, name)
+            return None
+
+        # Try system component
+        if name in DeviceSystem.__annotations__:
+            if self.system is not None:
+                return getattr(self.system, name)
+            return None
+
+        raise AttributeError(
+            f"{self.__class__.__name__!r} object has no attribute {name!r}"
+        )

@@ -2,6 +2,7 @@
 
 from typing import Generic, TypeVar, List, Optional
 from pydantic import BaseModel, Field, ConfigDict, ValidationInfo, field_validator
+from pydantic_core import PydanticCustomError
 
 T = TypeVar("T")
 
@@ -25,28 +26,44 @@ class ValidationMixin(UnifiBaseModel):
     ) -> Optional[int]:
         """Validate integer is within range."""
         if v is not None and not min_val <= v <= max_val:
-            raise ValueError(f"{field_name} must be between {min_val} and {max_val}")
+            raise PydanticCustomError(
+                "value_out_of_range",
+                "{field_name} must be between {min_val} and {max_val}",
+                {"field_name": field_name, "min_val": min_val, "max_val": max_val},
+            )
         return v
 
     @classmethod
     def validate_non_negative(cls, v: Optional[int]) -> Optional[int]:
         """Validate integer is non-negative."""
         if v is not None and v < 0:
-            raise ValueError("Value must be non-negative")
+            raise PydanticCustomError(
+                "value_negative",
+                "Value must be non-negative",
+                {},
+            )
         return v
 
     @classmethod
     def validate_percentage(cls, v: Optional[float]) -> Optional[float]:
         """Validate value is a valid percentage (0-100)."""
         if v is not None and not 0 <= v <= 100:
-            raise ValueError("Percentage must be between 0 and 100")
+            raise PydanticCustomError(
+                "value_out_of_range",
+                "Percentage must be between 0 and 100",
+                {},
+            )
         return v
 
     @classmethod
     def validate_negative(cls, v: Optional[int]) -> Optional[int]:
         """Validate integer is negative."""
         if v is not None and v >= 0:
-            raise ValueError("Value must be negative")
+            raise PydanticCustomError(
+                "value_not_negative",
+                "Value must be negative",
+                {},
+            )
         return v
 
 
