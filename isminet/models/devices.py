@@ -10,6 +10,8 @@ from .base import (
     DeviceBaseMixin,
     NetworkMixin,
     SystemStatsMixin,
+    WifiMixin,
+    TimestampMixin,
 )
 from .validators import (
     validate_mac,
@@ -152,31 +154,19 @@ class PortStats(StatisticsMixin, NetworkMixin, UnifiBaseModel):
     _validate_mac_list = field_validator("port_security_mac_address")(validate_mac)
 
 
-class WifiStats(UnifiBaseModel):
+class WifiStats(WifiMixin, UnifiBaseModel):
     """WiFi-specific statistics for wireless clients."""
 
     ap_mac: str = Field(description="MAC address")
-    channel: int = Field(description="WiFi channel")
     radio: RadioType = Field(description="Radio type (ng, na, 6e)")
     radio_proto: RadioProto = Field(description="Radio protocol (ng, ac, ax, be)")
     essid: str = Field(description="Network SSID")
     bssid: str = Field(description="MAC address")
     signal: int = Field(description="Signal strength in dBm", le=0)
     noise: int = Field(description="Noise level in dBm", le=0)
-    tx_rate: int = Field(description="Transmit rate in Kbps", ge=0)
-    rx_rate: int = Field(description="Receive rate in Kbps", ge=0)
-    tx_power: int = Field(description="Transmit power")
-    tx_retries: int = Field(description="Number of transmit retries", ge=0)
-    satisfaction: Optional[int] = Field(
-        None, description="Satisfaction score (0-100)", ge=0, le=100
-    )
-    ccq: Optional[int] = Field(
-        None, description="Client connection quality", ge=0, le=1000
-    )
     nss: Optional[int] = Field(
         None, description="Number of spatial streams", ge=1, le=8
     )
-    channel_width: Optional[int] = Field(None, description="Channel width in MHz")
     powersave_enabled: Optional[bool] = Field(
         None, description="Whether power save is enabled"
     )
@@ -196,10 +186,8 @@ class WifiStats(UnifiBaseModel):
     tx_retry_burst_count: Optional[int] = Field(
         None, description="Transmit retry burst count", ge=0
     )
-    radio_name: Optional[str] = Field(None, description="Radio name")
-    authorized: Optional[bool] = Field(None, description="Whether client is authorized")
-    qos_policy_applied: Optional[bool] = Field(
-        None, description="Whether QoS policy is applied"
+    ccq: Optional[int] = Field(
+        None, description="Client connection quality", ge=0, le=1000
     )
 
     @field_validator("signal", "noise")
@@ -212,8 +200,10 @@ class WifiStats(UnifiBaseModel):
 
     @field_validator("channel")
     @classmethod
-    def validate_channel(cls, v: int, info: ValidationInfo) -> int:
+    def validate_channel(cls, v: Optional[int], info: ValidationInfo) -> Optional[int]:
         """Validate channel number based on radio type."""
+        if v is None:
+            return v
         radio = info.data.get("radio")
         if radio == RadioType.NG and not 1 <= v <= 14:
             raise ValueError("2.4 GHz channels must be between 1 and 14")
@@ -226,12 +216,13 @@ class WifiStats(UnifiBaseModel):
     @model_validator(mode="after")
     def validate_channel_radio(self) -> "WifiStats":
         """Validate channel and radio type combination."""
-        if self.radio == RadioType.NG and self.channel > 14:
-            raise ValueError("Invalid channel for 2.4 GHz radio")
-        if self.radio == RadioType.NA and self.channel < 36:
-            raise ValueError("Invalid channel for 5 GHz radio")
-        if self.radio == RadioType._6E and self.channel > 233:
-            raise ValueError("Invalid channel for 6 GHz radio")
+        if self.channel is not None:
+            if self.radio == RadioType.NG and self.channel > 14:
+                raise ValueError("Invalid channel for 2.4 GHz radio")
+            if self.radio == RadioType.NA and self.channel < 36:
+                raise ValueError("Invalid channel for 5 GHz radio")
+            if self.radio == RadioType._6E and self.channel > 233:
+                raise ValueError("Invalid channel for 6 GHz radio")
         return self
 
     @field_validator("channel_width")
@@ -245,15 +236,12 @@ class WifiStats(UnifiBaseModel):
     _validate_mac = field_validator("ap_mac", "bssid")(validate_mac)
 
 
-class Client(DeviceBaseMixin, StatisticsMixin):
+class Client(DeviceBaseMixin, StatisticsMixin, NetworkMixin, TimestampMixin):
     """UniFi Network client device."""
 
     hostname: str = Field(description="Client hostname")
     last_ip: Optional[str] = Field(None, description="IP address")
-    is_guest: bool = Field(description="Whether client is a guest")
     is_wired: bool = Field(description="Whether client is wired")
-    network: str = Field(description="Network name")
-    network_id: str = Field(description="Network identifier")
     first_seen: int = Field(description="First seen timestamp")
     wifi_stats: Optional[WifiStats] = Field(
         None, description="WiFi statistics if wireless client"
@@ -264,10 +252,6 @@ class Client(DeviceBaseMixin, StatisticsMixin):
     dev_vendor: Optional[int] = Field(None, description="Device vendor")
     os_name: Optional[int] = Field(None, description="Operating system")
     hostname_source: Optional[str] = Field(None, description="Hostname source")
-    authorized: Optional[bool] = Field(None, description="Whether client is authorized")
-    qos_policy_applied: Optional[bool] = Field(
-        None, description="Whether QoS policy is applied"
-    )
     use_fixedip: Optional[bool] = Field(None, description="Whether using fixed IP")
     fixed_ip: Optional[str] = Field(None, description="Fixed IP address")
     ipv6_addresses: Optional[List[str]] = Field(None, description="IPv6 addresses")
@@ -286,13 +270,6 @@ class Client(DeviceBaseMixin, StatisticsMixin):
     )
     gw_mac: Optional[str] = Field(None, description="Gateway MAC address")
     gw_vlan: Optional[int] = Field(None, description="Gateway VLAN ID", ge=0, le=4095)
-    disconnect_timestamp: Optional[int] = Field(
-        None, description="Last disconnect timestamp"
-    )
-    assoc_time: Optional[int] = Field(None, description="Association time")
-    latest_assoc_time: Optional[int] = Field(
-        None, description="Latest association time"
-    )
     dhcpend_time: Optional[int] = Field(None, description="DHCP lease end time")
     priority: Optional[int] = Field(None, description="Client priority")
     anomalies: Optional[int] = Field(None, description="Client anomalies")
@@ -342,29 +319,6 @@ class Client(DeviceBaseMixin, StatisticsMixin):
     _validate_mac = field_validator("mac", "gw_mac", "sw_mac")(validate_mac)
     _validate_ip = field_validator("ip", "last_ip", "fixed_ip")(validate_ip)
     _validate_ipv6_list = field_validator("ipv6_addresses")(validate_ipv6_list)
-
-    @field_validator("first_seen")
-    @classmethod
-    def validate_first_seen(cls, v: int, info: ValidationInfo) -> int:
-        """Validate first_seen is before last_seen."""
-        if "last_seen" in info.data and v > info.data["last_seen"]:
-            raise ValueError("first_seen must be before last_seen")
-        return v
-
-    @field_validator("latest_assoc_time")
-    @classmethod
-    def validate_latest_assoc_time(
-        cls, v: Optional[int], info: ValidationInfo
-    ) -> Optional[int]:
-        """Validate latest_assoc_time is after assoc_time."""
-        if (
-            v is not None
-            and "assoc_time" in info.data
-            and info.data["assoc_time"] is not None
-        ):
-            if v < info.data["assoc_time"]:
-                raise ValueError("latest_assoc_time must be after assoc_time")
-        return v
 
 
 class Device(DeviceBaseMixin, StatisticsMixin, SystemStatsMixin):

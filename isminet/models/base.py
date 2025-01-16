@@ -1,7 +1,7 @@
 """Base models for the UniFi Network API."""
 
 from typing import Generic, TypeVar, List, Optional
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, ValidationInfo, field_validator
 
 T = TypeVar("T")
 
@@ -86,3 +86,80 @@ class SystemStatsMixin(UnifiBaseModel):
     loadavg_15: Optional[float] = Field(
         None, description="15-minute load average", ge=0
     )
+
+
+class WifiMixin(UnifiBaseModel):
+    """Common WiFi-related fields."""
+
+    channel: Optional[int] = Field(None, description="WiFi channel")
+    tx_rate: Optional[int] = Field(None, description="Transmit rate in Kbps", ge=0)
+    rx_rate: Optional[int] = Field(None, description="Receive rate in Kbps", ge=0)
+    tx_power: Optional[int] = Field(None, description="Transmit power")
+    tx_retries: Optional[int] = Field(
+        None, description="Number of transmit retries", ge=0
+    )
+    channel_width: Optional[int] = Field(None, description="Channel width in MHz")
+    radio_name: Optional[str] = Field(None, description="Radio name")
+    authorized: Optional[bool] = Field(None, description="Whether client is authorized")
+    qos_policy_applied: Optional[bool] = Field(
+        None, description="Whether QoS policy is applied"
+    )
+
+
+class TimestampMixin(UnifiBaseModel):
+    """Common timestamp-related fields."""
+
+    first_seen: Optional[int] = Field(None, description="First seen timestamp")
+    last_seen: Optional[int] = Field(None, description="Last seen timestamp")
+    disconnect_timestamp: Optional[int] = Field(
+        None, description="Last disconnect timestamp"
+    )
+    assoc_time: Optional[int] = Field(None, description="Association time")
+    latest_assoc_time: Optional[int] = Field(
+        None, description="Latest association time"
+    )
+
+    @field_validator("first_seen")
+    @classmethod
+    def validate_first_seen(
+        cls, v: Optional[int], info: ValidationInfo
+    ) -> Optional[int]:
+        """Validate first_seen is before last_seen."""
+        if (
+            v is not None
+            and "last_seen" in info.data
+            and info.data["last_seen"] is not None
+        ):
+            if v > info.data["last_seen"]:
+                raise ValueError("first_seen must be before last_seen")
+        return v
+
+    @field_validator("last_seen")
+    @classmethod
+    def validate_last_seen(
+        cls, v: Optional[int], info: ValidationInfo
+    ) -> Optional[int]:
+        """Validate last_seen is after first_seen."""
+        if (
+            v is not None
+            and "first_seen" in info.data
+            and info.data["first_seen"] is not None
+        ):
+            if v < info.data["first_seen"]:
+                raise ValueError("last_seen must be after first_seen")
+        return v
+
+    @field_validator("latest_assoc_time")
+    @classmethod
+    def validate_latest_assoc_time(
+        cls, v: Optional[int], info: ValidationInfo
+    ) -> Optional[int]:
+        """Validate latest_assoc_time is after assoc_time."""
+        if (
+            v is not None
+            and "assoc_time" in info.data
+            and info.data["assoc_time"] is not None
+        ):
+            if v < info.data["assoc_time"]:
+                raise ValueError("latest_assoc_time must be after assoc_time")
+        return v
