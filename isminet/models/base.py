@@ -218,10 +218,10 @@ class SFPMixin(UnifiBaseModel):
     sfp_temperature: Optional[float] = Field(None, description="SFP module temperature")
     sfp_voltage: Optional[float] = Field(None, description="SFP module voltage", ge=0)
     sfp_rxpower: Optional[float] = Field(
-        None, description="SFP module RX power in dBm", le=0
+        None, description="SFP module RX power in dBm", lt=0
     )
     sfp_txpower: Optional[float] = Field(
-        None, description="SFP module TX power in dBm", le=0
+        None, description="SFP module TX power in dBm", lt=0
     )
 
 

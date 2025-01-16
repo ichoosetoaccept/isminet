@@ -2,7 +2,7 @@
 
 from typing import Optional, List
 from enum import Enum
-from pydantic import Field, ValidationInfo, model_validator, field_validator
+from pydantic import Field, model_validator, field_validator
 
 from .base import (
     UnifiBaseModel,
@@ -22,6 +22,7 @@ from .base import (
 )
 from .validators import (
     validate_mac,
+    validate_mac_list,
     validate_ip,
     validate_ipv6_list,
     validate_version,
@@ -120,7 +121,7 @@ class PortStats(
     _validate_mac = field_validator("mac")(validate_mac)
     _validate_ip = field_validator("ip")(validate_ip)
     _validate_netmask = field_validator("netmask")(validate_ip)
-    _validate_mac_list = field_validator("port_security_mac_address")(validate_mac)
+    _validate_mac_list = field_validator("port_security_mac_address")(validate_mac_list)
 
 
 class WifiStats(WifiMixin, UnifiBaseModel):
@@ -131,8 +132,9 @@ class WifiStats(WifiMixin, UnifiBaseModel):
     radio_proto: RadioProto = Field(description="Radio protocol (ng, ac, ax, be)")
     essid: str = Field(description="Network SSID")
     bssid: str = Field(description="MAC address")
-    signal: int = Field(description="Signal strength in dBm", le=0)
-    noise: int = Field(description="Noise level in dBm", le=0)
+    signal: int = Field(description="Signal strength in dBm", lt=0)
+    noise: int = Field(description="Noise level in dBm", lt=0)
+    channel: Optional[int] = Field(None, description="WiFi channel")
     nss: Optional[int] = Field(
         None, description="Number of spatial streams", ge=1, le=8
     )
@@ -159,39 +161,19 @@ class WifiStats(WifiMixin, UnifiBaseModel):
         None, description="Client connection quality", ge=0, le=1000
     )
 
-    @field_validator("signal", "noise")
-    @classmethod
-    def validate_dbm(cls, v: int) -> int:
-        """Validate dBm values are negative."""
-        if v > 0:
-            raise ValueError("dBm values must be negative")
-        return v
-
-    @field_validator("channel")
-    @classmethod
-    def validate_channel(cls, v: Optional[int], info: ValidationInfo) -> Optional[int]:
-        """Validate channel number based on radio type."""
-        if v is None:
-            return v
-        radio = info.data.get("radio")
-        if radio == RadioType.NG and not 1 <= v <= 14:
-            raise ValueError("2.4 GHz channels must be between 1 and 14")
-        if radio == RadioType.NA and not (36 <= v <= 165):
-            raise ValueError("5 GHz channels must be between 36 and 165")
-        if radio == RadioType._6E and not (1 <= v <= 233):
-            raise ValueError("6 GHz channels must be between 1 and 233")
-        return v
-
     @model_validator(mode="after")
     def validate_channel_radio(self) -> "WifiStats":
         """Validate channel and radio type combination."""
         if self.channel is not None:
-            if self.radio == RadioType.NG and self.channel > 14:
-                raise ValueError("Invalid channel for 2.4 GHz radio")
-            if self.radio == RadioType.NA and self.channel < 36:
-                raise ValueError("Invalid channel for 5 GHz radio")
-            if self.radio == RadioType._6E and self.channel > 233:
-                raise ValueError("Invalid channel for 6 GHz radio")
+            if self.radio == RadioType.NG:
+                if not 1 <= self.channel <= 14:
+                    raise ValueError("2.4 GHz channels must be between 1 and 14")
+            elif self.radio == RadioType.NA:
+                if not 36 <= self.channel <= 165:
+                    raise ValueError("5 GHz channels must be between 36 and 165")
+            elif self.radio == RadioType._6E:
+                if not 1 <= self.channel <= 233:
+                    raise ValueError("6 GHz channels must be between 1 and 233")
         return self
 
     @field_validator("channel_width")

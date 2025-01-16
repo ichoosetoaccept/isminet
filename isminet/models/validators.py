@@ -17,6 +17,18 @@ def validate_mac(v: Optional[str]) -> Optional[str]:
     return v.lower()
 
 
+def validate_mac_list(v: Optional[List[str]]) -> Optional[List[str]]:
+    """Validate list of MAC addresses."""
+    if v is None:
+        return None
+    validated = []
+    for mac in v:
+        if not MAC_PATTERN.match(mac):
+            raise ValueError(f"Invalid MAC address format: {mac}")
+        validated.append(mac.lower())
+    return validated
+
+
 def validate_ip(v: Optional[str]) -> Optional[str]:
     """Validate IPv4 address format."""
     if v is None:

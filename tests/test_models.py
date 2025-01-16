@@ -17,6 +17,16 @@ from isminet.models.devices import (
     WifiStats,
 )
 from isminet.models.version import VersionInfo
+from isminet.models.base import (
+    ValidationMixin,
+    NetworkMixin,
+    SystemStatsMixin,
+    TimestampMixin,
+    PoEMixin,
+    SFPMixin,
+    StormControlMixin,
+    UnifiBaseModel,
+)
 
 # Load test data from API response examples
 DOCS_DIR = Path(__file__).parent.parent / "docs" / "api_responses"
@@ -251,3 +261,513 @@ def test_version_info_validation():
         invalid_data = valid_data.copy()
         invalid_data["version"] = "invalid.version"
         VersionInfo(**invalid_data)
+
+
+def test_validation_mixin():
+    """Test ValidationMixin functionality."""
+
+    class TestModel(ValidationMixin, UnifiBaseModel):
+        """Test model using ValidationMixin."""
+
+    # Test range validation
+    assert TestModel.validate_range(50, 0, 100, "test") == 50
+    with pytest.raises(ValueError, match="test must be between 0 and 100"):
+        TestModel.validate_range(101, 0, 100, "test")
+    with pytest.raises(ValueError, match="test must be between 0 and 100"):
+        TestModel.validate_range(-1, 0, 100, "test")
+
+    # Test non-negative validation
+    assert TestModel.validate_non_negative(0) == 0
+    assert TestModel.validate_non_negative(1) == 1
+    with pytest.raises(ValueError, match="Value must be non-negative"):
+        TestModel.validate_non_negative(-1)
+
+    # Test percentage validation
+    assert TestModel.validate_percentage(0.0) == 0.0
+    assert TestModel.validate_percentage(100.0) == 100.0
+    with pytest.raises(ValueError, match="Percentage must be between 0 and 100"):
+        TestModel.validate_percentage(101.0)
+
+    # Test negative validation
+    assert TestModel.validate_negative(-1) == -1
+    with pytest.raises(ValueError, match="Value must be negative"):
+        TestModel.validate_negative(0)
+
+
+def test_network_mixin():
+    """Test NetworkMixin validation."""
+
+    class TestModel(NetworkMixin, UnifiBaseModel):
+        """Test model using NetworkMixin."""
+
+    # Test valid VLAN range
+    model = TestModel(vlan=1)
+    assert model.vlan == 1
+
+    # Test VLAN boundaries
+    model = TestModel(vlan=0)
+    assert model.vlan == 0
+    model = TestModel(vlan=4095)
+    assert model.vlan == 4095
+
+    # Test invalid VLAN
+    with pytest.raises(ValidationError):
+        TestModel(vlan=4096)
+    with pytest.raises(ValidationError):
+        TestModel(vlan=-1)
+
+
+def test_system_stats_mixin():
+    """Test SystemStatsMixin validation."""
+
+    class TestModel(SystemStatsMixin, UnifiBaseModel):
+        """Test model using SystemStatsMixin."""
+
+    # Test valid percentages
+    model = TestModel(cpu_usage=50.0, mem_usage=75.5)
+    assert model.cpu_usage == 50.0
+    assert model.mem_usage == 75.5
+
+    # Test percentage boundaries
+    model = TestModel(cpu_usage=0, mem_usage=100)
+    assert model.cpu_usage == 0
+    assert model.mem_usage == 100
+
+    # Test invalid percentages
+    with pytest.raises(ValidationError):
+        TestModel(cpu_usage=101)
+    with pytest.raises(ValidationError):
+        TestModel(mem_usage=-1)
+
+    # Test load averages
+    model = TestModel(loadavg_1=0.5, loadavg_5=1.0, loadavg_15=1.5)
+    assert model.loadavg_1 == 0.5
+    assert model.loadavg_5 == 1.0
+    assert model.loadavg_15 == 1.5
+
+    # Test invalid load averages
+    with pytest.raises(ValidationError):
+        TestModel(loadavg_1=-1)
+
+
+def test_timestamp_mixin():
+    """Test TimestampMixin validation."""
+
+    class TestModel(TimestampMixin, UnifiBaseModel):
+        """Test model using TimestampMixin."""
+
+    # Test valid timestamps
+    model = TestModel(
+        first_seen=1000,
+        last_seen=2000,
+        assoc_time=1500,
+        latest_assoc_time=1600,
+    )
+    assert model.first_seen == 1000
+    assert model.last_seen == 2000
+
+    # Test invalid timestamp order
+    with pytest.raises(ValidationError):
+        TestModel(first_seen=2000, last_seen=1000)
+
+    # Test invalid association time order
+    with pytest.raises(ValidationError):
+        TestModel(assoc_time=2000, latest_assoc_time=1000)
+
+    # Test partial timestamps
+    model = TestModel(first_seen=1000)  # No last_seen
+    assert model.first_seen == 1000
+
+    model = TestModel(last_seen=2000)  # No first_seen
+    assert model.last_seen == 2000
+
+
+def test_poe_mixin():
+    """Test PoEMixin validation."""
+
+    class TestModel(PoEMixin, UnifiBaseModel):
+        """Test model using PoEMixin."""
+
+    # Test valid PoE configuration
+    model = TestModel(
+        port_poe=True,
+        poe_enable=True,
+        poe_mode="auto",
+        poe_power="15.4W",
+        poe_caps=1,
+    )
+    assert model.port_poe is True
+    assert model.poe_enable is True
+
+    # Test optional fields
+    model = TestModel()
+    assert model.port_poe is None
+    assert model.poe_enable is None
+
+
+def test_sfp_mixin():
+    """Test SFPMixin validation."""
+
+    class TestModel(SFPMixin, UnifiBaseModel):
+        """Test model using SFPMixin."""
+
+    # Test valid SFP module data
+    model = TestModel(
+        sfp_vendor="Ubiquiti",
+        sfp_part="UF-MM-10G",
+        sfp_serial="ABCD1234",
+        sfp_temperature=45.5,
+        sfp_voltage=3.3,
+        sfp_rxpower=-10.0,
+        sfp_txpower=-5.0,
+    )
+    assert model.sfp_vendor == "Ubiquiti"
+    assert model.sfp_temperature == 45.5
+
+    # Test voltage constraints
+    with pytest.raises(ValidationError):
+        TestModel(sfp_voltage=-1)
+
+    # Test power constraints
+    with pytest.raises(ValidationError):
+        TestModel(sfp_rxpower=1)
+    with pytest.raises(ValidationError):
+        TestModel(sfp_txpower=1)
+
+
+def test_storm_control_mixin():
+    """Test StormControlMixin validation."""
+
+    class TestModel(StormControlMixin, UnifiBaseModel):
+        """Test model using StormControlMixin."""
+
+    # Test valid storm control settings
+    model = TestModel(
+        stormctrl_bcast_enabled=True,
+        stormctrl_bcast_rate=80,
+        stormctrl_mcast_enabled=True,
+        stormctrl_mcast_rate=70,
+        stormctrl_ucast_enabled=True,
+        stormctrl_ucast_rate=60,
+    )
+    assert model.stormctrl_bcast_rate == 80
+    assert model.stormctrl_mcast_rate == 70
+    assert model.stormctrl_ucast_rate == 60
+
+    # Test rate boundaries
+    model = TestModel(
+        stormctrl_bcast_rate=0,
+        stormctrl_mcast_rate=100,
+    )
+    assert model.stormctrl_bcast_rate == 0
+    assert model.stormctrl_mcast_rate == 100
+
+    # Test invalid rates
+    with pytest.raises(ValidationError):
+        TestModel(stormctrl_bcast_rate=101)
+    with pytest.raises(ValidationError):
+        TestModel(stormctrl_mcast_rate=-1)
+    with pytest.raises(ValidationError):
+        TestModel(stormctrl_ucast_rate=200)
+
+
+def test_wifi_stats_edge_cases():
+    """Test WifiStats edge cases and complex validations."""
+    # Test all radio types with valid channels
+    valid_combinations = [
+        (RadioType.NG, 1),  # 2.4 GHz min
+        (RadioType.NG, 14),  # 2.4 GHz max
+        (RadioType.NA, 36),  # 5 GHz min
+        (RadioType.NA, 165),  # 5 GHz max
+        (RadioType._6E, 1),  # 6 GHz min
+        (RadioType._6E, 233),  # 6 GHz max
+    ]
+    for radio_type, channel in valid_combinations:
+        stats = WifiStats(
+            ap_mac=VALID_MAC,
+            radio=radio_type,
+            radio_proto=RadioProto.AX,
+            essid="test",
+            bssid=VALID_MAC,
+            signal=-70,
+            noise=-90,
+            channel=channel,
+        )
+        assert stats.channel == channel
+
+    # Test invalid channel combinations
+    invalid_combinations = [
+        (RadioType.NG, 0),  # Below 2.4 GHz
+        (RadioType.NG, 15),  # Above 2.4 GHz
+        (RadioType.NA, 35),  # Below 5 GHz
+        (RadioType.NA, 166),  # Above 5 GHz
+        (RadioType._6E, 0),  # Below 6 GHz
+        (RadioType._6E, 234),  # Above 6 GHz
+    ]
+    for radio_type, channel in invalid_combinations:
+        with pytest.raises(ValidationError):
+            WifiStats(
+                ap_mac=VALID_MAC,
+                radio=radio_type,
+                radio_proto=RadioProto.AX,
+                essid="test",
+                bssid=VALID_MAC,
+                signal=-70,
+                noise=-90,
+                channel=channel,
+            )
+
+    # Test signal/noise constraints
+    with pytest.raises(ValidationError):
+        WifiStats(
+            ap_mac=VALID_MAC,
+            radio=RadioType.NG,
+            radio_proto=RadioProto.AX,
+            essid="test",
+            bssid=VALID_MAC,
+            signal=0,  # Should be negative
+            noise=-90,
+        )
+
+    with pytest.raises(ValidationError):
+        WifiStats(
+            ap_mac=VALID_MAC,
+            radio=RadioType.NG,
+            radio_proto=RadioProto.AX,
+            essid="test",
+            bssid=VALID_MAC,
+            signal=-70,
+            noise=0,  # Should be negative
+        )
+
+    # Test channel width values
+    valid_widths = [20, 40, 80, 160, 320]
+    for width in valid_widths:
+        stats = WifiStats(
+            ap_mac=VALID_MAC,
+            radio=RadioType.NA,
+            radio_proto=RadioProto.AX,
+            essid="test",
+            bssid=VALID_MAC,
+            signal=-70,
+            noise=-90,
+            channel_width=width,
+        )
+        assert stats.channel_width == width
+
+    # Test invalid channel width
+    invalid_widths = [10, 30, 60, 120, 240]
+    for width in invalid_widths:
+        with pytest.raises(ValidationError):
+            WifiStats(
+                ap_mac=VALID_MAC,
+                radio=RadioType.NA,
+                radio_proto=RadioProto.AX,
+                essid="test",
+                bssid=VALID_MAC,
+                signal=-70,
+                noise=-90,
+                channel_width=width,
+            )
+
+
+def test_client_complex_validation():
+    """Test Client model complex validation scenarios."""
+    # Test timestamp sequence validation
+    timestamps = {
+        "first_seen": 1000,
+        "last_seen": 2000,
+        "assoc_time": 1500,
+        "latest_assoc_time": 1600,
+        "disconnect_timestamp": 1800,
+    }
+
+    # Test valid sequence
+    client = Client(
+        hostname="test", mac=VALID_MAC, ip=VALID_IPV4, is_wired=True, **timestamps
+    )
+    assert client.first_seen == 1000
+    assert client.latest_assoc_time == 1600
+
+    # Test invalid sequences
+    invalid_sequences = [
+        {"first_seen": 2000, "last_seen": 1000},  # first after last
+        {"assoc_time": 1600, "latest_assoc_time": 1500},  # latest before first
+        {
+            "first_seen": 2000,
+            "assoc_time": 1000,
+            "last_seen": 1500,
+        },  # inconsistent order
+    ]
+
+    for invalid_seq in invalid_sequences:
+        test_data = timestamps.copy()
+        test_data.update(invalid_seq)
+        with pytest.raises(ValidationError):
+            Client(
+                hostname="test",
+                mac=VALID_MAC,
+                ip=VALID_IPV4,
+                is_wired=True,
+                **test_data,
+            )
+
+    # Test IPv6 validation
+    client = Client(
+        hostname="test",
+        mac=VALID_MAC,
+        ip=VALID_IPV4,
+        is_wired=True,
+        first_seen=1000,
+        ipv6_addresses=[VALID_IPV6],
+    )
+    assert client.ipv6_addresses == [VALID_IPV6]
+
+    # Test invalid IPv6
+    with pytest.raises(ValidationError):
+        Client(
+            hostname="test",
+            mac=VALID_MAC,
+            ip=VALID_IPV4,
+            is_wired=True,
+            first_seen=1000,
+            ipv6_addresses=["invalid-ipv6"],
+        )
+
+    # Test multiple MAC addresses
+    client = Client(
+        hostname="test",
+        mac=VALID_MAC,
+        ip=VALID_IPV4,
+        is_wired=True,
+        first_seen=1000,
+        gw_mac=VALID_MAC,
+        sw_mac=VALID_MAC,
+    )
+    assert client.mac == VALID_MAC.lower()
+    assert client.gw_mac == VALID_MAC.lower()
+    assert client.sw_mac == VALID_MAC.lower()
+
+    # Test invalid MAC combinations
+    invalid_macs = [
+        {"mac": "invalid", "gw_mac": VALID_MAC},
+        {"mac": VALID_MAC, "gw_mac": "invalid"},
+        {"mac": VALID_MAC, "sw_mac": "invalid"},
+    ]
+
+    for invalid_mac in invalid_macs:
+        with pytest.raises(ValidationError):
+            Client(
+                hostname="test",
+                ip=VALID_IPV4,
+                is_wired=True,
+                first_seen=1000,
+                **invalid_mac,
+            )
+
+
+def test_port_stats_complex_validation():
+    """Test PortStats model complex validation scenarios."""
+    # Test valid port configuration
+    port = PortStats(
+        port_idx=1,
+        name="Port 1",
+        media="GE",
+        speed=1000,
+        up=True,
+        is_uplink=False,
+        mac=VALID_MAC,
+        rx_errors=0,
+        tx_errors=0,
+        type="ethernet",
+        port_poe=True,
+        poe_mode="auto",
+        stormctrl_bcast_rate=80,
+        stormctrl_mcast_rate=80,
+        stormctrl_ucast_rate=80,
+        port_security_mac_address=[VALID_MAC],
+    )
+    assert port.port_idx == 1
+    assert port.speed == 1000
+
+    # Test invalid port index
+    with pytest.raises(ValidationError):
+        PortStats(
+            port_idx=0,  # Must be >= 1
+            name="Port 0",
+            media="GE",
+            speed=1000,
+            up=True,
+            is_uplink=False,
+            mac=VALID_MAC,
+            rx_errors=0,
+            tx_errors=0,
+            type="ethernet",
+        )
+
+    # Test storm control rate combinations
+    invalid_rates = [
+        {"stormctrl_bcast_rate": 101},
+        {"stormctrl_mcast_rate": -1},
+        {"stormctrl_ucast_rate": 1000},
+    ]
+
+    for invalid_rate in invalid_rates:
+        with pytest.raises(ValidationError):
+            PortStats(
+                port_idx=1,
+                name="Port 1",
+                media="GE",
+                speed=1000,
+                up=True,
+                is_uplink=False,
+                mac=VALID_MAC,
+                rx_errors=0,
+                tx_errors=0,
+                type="ethernet",
+                **invalid_rate,
+            )
+
+    # Test SFP module validation
+    port = PortStats(
+        port_idx=1,
+        name="Port 1",
+        media="SFP+",
+        speed=10000,
+        up=True,
+        is_uplink=True,
+        mac=VALID_MAC,
+        rx_errors=0,
+        tx_errors=0,
+        type="sfp",
+        sfp_vendor="Ubiquiti",
+        sfp_part="UF-MM-10G",
+        sfp_voltage=3.3,
+        sfp_rxpower=-10.0,
+        sfp_txpower=-5.0,
+    )
+    assert port.media == "SFP+"
+    assert port.sfp_voltage == 3.3
+
+    # Test invalid SFP power values
+    invalid_powers = [
+        {"sfp_rxpower": 1.0},  # Must be negative
+        {"sfp_txpower": 0.0},  # Must be negative
+        {"sfp_voltage": -1.0},  # Must be positive
+    ]
+
+    for invalid_power in invalid_powers:
+        with pytest.raises(ValidationError):
+            PortStats(
+                port_idx=1,
+                name="Port 1",
+                media="SFP+",
+                speed=10000,
+                up=True,
+                is_uplink=True,
+                mac=VALID_MAC,
+                rx_errors=0,
+                tx_errors=0,
+                type="sfp",
+                **invalid_power,
+            )
