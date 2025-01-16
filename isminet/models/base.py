@@ -96,6 +96,37 @@ class BaseResponse(BaseModel, Generic[T]):
     meta: Dict[str, Any]
     data: Union[T, List[T]]
 
+    def validate_data(self) -> None:
+        """
+        Validate the data field against the specified generic type argument.
+        
+        This method ensures that the `data` attribute conforms to the expected type defined during BaseResponse instantiation. It handles both single instances and lists of instances.
+        
+        Parameters:
+            None
+        
+        Raises:
+            ValidationError: If the data does not match the expected type or cannot be converted to it.
+        
+        Notes:
+            - Skips validation if no generic type is specified
+            - Supports validation of both single items and lists of items
+            - Uses model type constructor to validate and potentially convert input data
+        """
+        if not hasattr(self, "__orig_bases__"):
+            return
+
+        model_type = get_args(self.__orig_bases__[0])[0]
+        if not self.data:
+            return
+
+        if isinstance(self.data, list):
+            for item in self.data:
+                if not isinstance(item, model_type):
+                    model_type(**item)
+        elif not isinstance(self.data, model_type):
+            model_type(**self.data)
+
     @classmethod
     def get_data_type(cls) -> type:
         """Get the type of the data field."""

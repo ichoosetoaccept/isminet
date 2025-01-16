@@ -47,7 +47,21 @@ VALID_NETWORK_CONFIG = {
 
 
 def test_dhcp_configuration():
-    """Test DHCPConfiguration validation."""
+    """
+    Test the validation and configuration of DHCPConfiguration instances.
+    
+    This test function verifies the behavior of DHCPConfiguration by:
+    - Validating a complete, valid DHCP server configuration
+    - Checking the handling of disabled DHCP mode
+    - Ensuring required fields are present when DHCP is enabled
+    - Confirming that invalid IP addresses raise validation errors
+    
+    Parameters:
+        None
+    
+    Raises:
+        ValidationError: When configuration is invalid due to missing fields or incorrect IP addresses
+    """
     # Test valid configuration
     config = DHCPConfiguration(**VALID_DHCP_CONFIG)
     assert config.mode == DHCPMode.SERVER
@@ -72,7 +86,22 @@ def test_dhcp_configuration():
 
 
 def test_vlan_configuration():
-    """Test VLANConfiguration validation."""
+    """
+    Test the validation rules for VLAN (Virtual Local Area Network) configurations.
+    
+    This test function validates the VLANConfiguration model by:
+    - Verifying successful creation with a valid configuration
+    - Checking boundary conditions for VLAN ID (must be between 1 and 4094)
+    - Ensuring that tagged and untagged ports do not overlap
+    
+    Parameters:
+        None
+    
+    Raises:
+        ValidationError: If VLAN configuration violates validation rules
+            - VLAN ID is less than 1 or greater than 4094
+            - Tagged and untagged ports have common interfaces
+    """
     # Test valid configuration
     config = VLANConfiguration(**VALID_VLAN_CONFIG)
     assert config.vlan_id == 100
@@ -98,7 +127,22 @@ def test_vlan_configuration():
 
 
 def test_network_configuration():
-    """Test NetworkConfiguration validation."""
+    """
+    Test the validation and configuration of network settings.
+    
+    This test function validates the NetworkConfiguration model by:
+    - Verifying correct initialization with valid network configuration
+    - Checking validation for invalid purpose
+    - Ensuring VLAN configuration constraints are enforced
+    - Validating duplicate VLAN ID detection
+    - Testing IPv6-specific configuration parameters
+    
+    Parameters:
+        None
+    
+    Raises:
+        ValidationError: If network configuration fails validation checks
+    """
     # Test valid configuration
     config = NetworkConfiguration(**VALID_NETWORK_CONFIG)
     assert config.name == "Main Network"
