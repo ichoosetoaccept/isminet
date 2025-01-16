@@ -13,6 +13,7 @@ dependencies = [
     "python-dotenv>=1.0.1",
     "rich>=13.9.4",
     "pydantic>=2.10.5",
+    "pydantic-settings>=2.7.1",
 ]
 
 [tool.pytest.ini_options]
@@ -26,4 +27,5 @@ dev = [
     "pytest-cov>=6.0.0",
     "pre-commit>=4.0.1",
     "ruff>=0.9.1",
+    "types-requests>=2.32.0.20241016",
 ]
