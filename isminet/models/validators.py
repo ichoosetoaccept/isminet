@@ -1,6 +1,6 @@
 """Common validators and fields for UniFi Network API models."""
 
-from typing import Optional, List
+from typing import Optional, List, Callable, Any
 from ipaddress import IPv4Address, IPv6Address
 import re
 from pydantic import Field
@@ -22,20 +22,66 @@ def validate_mac(v: Optional[str]) -> Optional[str]:
     return v.lower()
 
 
-def validate_mac_list(v: Optional[List[str]]) -> Optional[List[str]]:
-    """Validate list of MAC addresses."""
-    if v is None:
-        return None
-    validated = []
-    for mac in v:
-        if not MAC_PATTERN.match(mac):
+def create_list_validator(
+    validator_func: Callable[[str], Any],
+    error_type: str,
+    error_msg: str,
+    transform_func: Optional[Callable[[str], str]] = None,
+) -> Callable[[Optional[List[str]]], Optional[List[str]]]:
+    """
+    Create a validator for lists of values.
+
+    Args:
+        validator_func: Function to validate each item
+        error_type: Type of error to raise on validation failure
+        error_msg: Error message template
+        transform_func: Optional function to transform valid values
+
+    Returns:
+        A validator function for lists of values
+    """
+
+    def validate_list(v: Optional[List[str]]) -> Optional[List[str]]:
+        if v is None:
+            return None
+
+        validated = []
+        errors = []
+
+        for item in v:
+            try:
+                validator_func(item)
+                validated.append(transform_func(item) if transform_func else item)
+            except ValueError:
+                errors.append(item)
+
+        if errors:
             raise PydanticCustomError(
-                "invalid_mac",
-                "Invalid MAC address format: {mac}",
-                {"mac": mac},
+                error_type,
+                error_msg,
+                {"values": ", ".join(errors)},
             )
-        validated.append(mac.lower())
-    return validated
+
+        return validated
+
+    return validate_list
+
+
+# Create validators using the factory
+validate_ip_list = create_list_validator(
+    IPv4Address, "invalid_ip", "Invalid IPv4 addresses: {values}"
+)
+
+validate_ipv6_list = create_list_validator(
+    IPv6Address, "invalid_ipv6", "Invalid IPv6 addresses: {values}"
+)
+
+validate_mac_list = create_list_validator(
+    lambda x: bool(MAC_PATTERN.match(x)),
+    "invalid_mac",
+    "Invalid MAC addresses: {values}",
+    transform_func=str.lower,
+)
 
 
 def validate_ip(v: Optional[str]) -> Optional[str]:
@@ -83,7 +129,7 @@ def validate_ip_list(v: Optional[List[str]]) -> Optional[List[str]]:
                 "invalid_ip",
                 "Invalid IPv4 address: {addr}",
                 {"addr": addr},
-            ) from err
+            )
     return validated
 
 
