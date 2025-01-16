@@ -1,4 +1,15 @@
-"""Tests for UniFi Network API client."""
+"""
+Tests for UniFi Network API client.
+
+This module contains unit tests for the BaseAPIClient class, covering:
+- Client initialization and configuration
+- Retry mechanism for failed requests
+- HTTP error handling and custom exceptions
+- Response validation using Pydantic models
+- Context manager implementation
+
+All tests use mocking to avoid actual API calls.
+"""
 
 import pytest
 from unittest.mock import Mock, patch
