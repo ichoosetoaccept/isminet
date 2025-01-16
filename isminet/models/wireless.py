@@ -1,6 +1,6 @@
 """Wireless settings models for UniFi Network devices."""
 
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from pydantic import Field, field_validator, model_validator
 
 from .base import UnifiBaseModel, ValidationMixin, WifiMixin
@@ -78,10 +78,10 @@ class NetworkProfile(ValidationMixin, UnifiBaseModel):
     mac_filter_policy: Optional[str] = Field(
         None, description="MAC filter policy (allow, deny)"
     )
-    radius_servers: Optional[List[dict]] = Field(
+    radius_servers: Optional[List[Dict[str, Any]]] = Field(
         None, description="RADIUS server configuration"
     )
-    schedule: Optional[dict] = Field(None, description="Network schedule")
+    schedule: Optional[Dict[str, Any]] = Field(None, description="Network schedule")
 
     _validate_mac_list = field_validator("mac_filter_list")(validate_mac_list)
 

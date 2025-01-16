@@ -1,6 +1,6 @@
 """System status models for UniFi Network devices."""
 
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 from pydantic import Field, field_validator, model_validator
 
 from .base import (
@@ -91,7 +91,7 @@ class SystemStatus(
         None, description="Process information"
     )
     services: Optional[List[ServiceStatus]] = Field(None, description="Service status")
-    alerts: Optional[List[Dict]] = Field(None, description="Active alerts")
+    alerts: Optional[List[Dict[str, Any]]] = Field(None, description="Active alerts")
     upgradable: Optional[bool] = Field(None, description="Whether upgrade is available")
     update_available: Optional[bool] = Field(
         None, description="Whether update is available"

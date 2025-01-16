@@ -1,6 +1,6 @@
 """Network configuration models for UniFi Network devices."""
 
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 from pydantic import Field, field_validator, model_validator
 
 from .base import UnifiBaseModel, ValidationMixin, NetworkMixin
@@ -25,7 +25,9 @@ class DHCPConfiguration(ValidationMixin, UnifiBaseModel):
     domain_name: Optional[str] = Field(None, description="Domain name")
     tftp_server: Optional[str] = Field(None, description="TFTP server IP")
     boot_file: Optional[str] = Field(None, description="Boot file name")
-    static_leases: Optional[List[Dict]] = Field(None, description="Static DHCP leases")
+    static_leases: Optional[List[Dict[str, Any]]] = Field(
+        None, description="Static DHCP leases"
+    )
 
     _validate_ip = field_validator(
         "start", "end", "gateway_ip", "unifi_controller", "ntp_server", "tftp_server"

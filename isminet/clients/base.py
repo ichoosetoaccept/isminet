@@ -1,7 +1,7 @@
 """Base API client implementation."""
 
 import time
-from typing import Any, Dict, Optional, Type, TypeVar, Union
+from typing import Any, Dict, Optional, Type, Union, Callable, TypeVar, ParamSpec
 from urllib.parse import urljoin
 
 from requests import Response, Session, Timeout
@@ -12,6 +12,8 @@ from ..config import APIConfig
 from ..models.base import UnifiBaseModel
 
 T = TypeVar("T", bound=UnifiBaseModel)
+P = ParamSpec("P")
+R = TypeVar("R")
 
 
 class APIError(Exception):
@@ -40,24 +42,28 @@ class ResponseValidationError(APIError):
         self.validation_error = validation_error
 
 
-def with_retry(max_retries: int = 3, delay: float = 1.0):
+def with_retry(
+    max_retries: int = 3, delay: float = 1.0
+) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Decorator to retry failed requests."""
 
-    def decorator(func):
-        def wrapper(*args, **kwargs):
+    def decorator(func: Callable[P, R]) -> Callable[P, R]:
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+            last_error = None
             for attempt in range(max_retries):
                 try:
                     return func(*args, **kwargs)
                 except (ConnectionError, Timeout) as e:
+                    last_error = e
                     if attempt == max_retries - 1:
-                        raise APIError(
-                            f"Request failed after {max_retries} retries: {str(e)}"
-                        )
-                    time.sleep(delay)
-                except (AuthenticationError, PermissionError, NotFoundError):
-                    # Don't retry client errors
-                    raise
-            return func(*args, **kwargs)
+                        break
+                    time.sleep(delay * (attempt + 1))
+
+            if last_error:
+                raise APIError(
+                    f"Request failed after {max_retries} retries: {str(last_error)}"
+                )
+            return func(*args, **kwargs)  # Final attempt
 
         return wrapper
 

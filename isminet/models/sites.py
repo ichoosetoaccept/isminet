@@ -19,7 +19,9 @@ class Site(BaseModel):
     role_hotspot: Optional[bool] = None
 
     @field_validator("name")
-    def validate_name(cls, v):
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        """Validate site name."""
         if not v.strip():
             raise ValueError("Name cannot be empty")
         return v

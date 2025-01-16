@@ -1,6 +1,6 @@
 """UniFi Network API client implementation."""
 
-from typing import List, Any, Type, TypeVar
+from typing import List, Any, Type, TypeVar, Dict, cast
 from .base import BaseAPIClient
 from ..models.devices import Device, Client
 from ..models.wireless import NetworkProfile, WLANConfiguration
@@ -19,7 +19,7 @@ class UnifiClient(BaseAPIClient):
         return f"/api/s/{self.config.site}"
 
     def _get_list_response(
-        self, response_data: dict[str, Any], model: Type[T]
+        self, response_data: Dict[str, Any], model: Type[T]
     ) -> List[T]:
         """Handle list responses.
 
@@ -38,7 +38,8 @@ class UnifiClient(BaseAPIClient):
     def get_device(self, mac: str) -> Device:
         """Get device by MAC address."""
         endpoint = f"{self.site_path}/stat/device/{mac}"
-        return self.get(endpoint, response_model=Device)
+        result = self.get(endpoint, response_model=Device)
+        return cast(Device, result)
 
     def get_devices(self) -> List[Device]:
         """Get all devices."""
@@ -46,21 +47,23 @@ class UnifiClient(BaseAPIClient):
         response = self.get(endpoint)
         return self._get_list_response(response, Device)
 
-    def update_device(self, mac: str, settings: dict) -> Device:
+    def update_device(self, mac: str, settings: Dict[str, Any]) -> Device:
         """Update device settings."""
         endpoint = f"{self.site_path}/rest/device/{mac}"
-        return self.put(endpoint, json=settings, response_model=Device)
+        result = self.put(endpoint, json=settings, response_model=Device)
+        return cast(Device, result)
 
     def restart_device(self, mac: str) -> None:
         """Restart device."""
         endpoint = f"{self.site_path}/cmd/devmgr/restart"
-        self.post(endpoint, json={"mac": mac, "cmd": "restart"})
+        self.post(endpoint, json={"mac": mac})
 
     # Client Management
     def get_client(self, mac: str) -> Client:
         """Get client by MAC address."""
         endpoint = f"{self.site_path}/stat/sta/{mac}"
-        return self.get(endpoint, response_model=Client)
+        result = self.get(endpoint, response_model=Client)
+        return cast(Client, result)
 
     def get_clients(self) -> List[Client]:
         """Get all clients."""
@@ -70,9 +73,10 @@ class UnifiClient(BaseAPIClient):
 
     # Wireless Settings
     def get_network_profile(self, profile_id: str) -> NetworkProfile:
-        """Get network profile."""
+        """Get network profile by ID."""
         endpoint = f"{self.site_path}/rest/networkconf/{profile_id}"
-        return self.get(endpoint, response_model=NetworkProfile)
+        result = self.get(endpoint, response_model=NetworkProfile)
+        return cast(NetworkProfile, result)
 
     def get_network_profiles(self) -> List[NetworkProfile]:
         """Get all network profiles."""
@@ -81,49 +85,56 @@ class UnifiClient(BaseAPIClient):
         return self._get_list_response(response, NetworkProfile)
 
     def get_wlan_config(self, device_mac: str) -> WLANConfiguration:
-        """Get WLAN configuration."""
+        """Get WLAN configuration for device."""
         endpoint = f"{self.site_path}/rest/wlanconf/{device_mac}"
-        return self.get(endpoint, response_model=WLANConfiguration)
+        result = self.get(endpoint, response_model=WLANConfiguration)
+        return cast(WLANConfiguration, result)
 
     def update_wlan_config(
         self, device_mac: str, config: WLANConfiguration
     ) -> WLANConfiguration:
-        """Update WLAN configuration."""
+        """Update WLAN configuration for device."""
         endpoint = f"{self.site_path}/rest/wlanconf/{device_mac}"
-        return self.put(
+        result = self.put(
             endpoint, json=config.model_dump(), response_model=WLANConfiguration
         )
+        return cast(WLANConfiguration, result)
 
     # Network Settings
     def get_network_config(self, network_id: str) -> NetworkConfiguration:
-        """Get network configuration."""
+        """Get network configuration by ID."""
         endpoint = f"{self.site_path}/rest/networkconf/{network_id}"
-        return self.get(endpoint, response_model=NetworkConfiguration)
+        result = self.get(endpoint, response_model=NetworkConfiguration)
+        return cast(NetworkConfiguration, result)
 
     def update_network_config(
         self, network_id: str, config: NetworkConfiguration
     ) -> NetworkConfiguration:
         """Update network configuration."""
         endpoint = f"{self.site_path}/rest/networkconf/{network_id}"
-        return self.put(
+        result = self.put(
             endpoint, json=config.model_dump(), response_model=NetworkConfiguration
         )
+        return cast(NetworkConfiguration, result)
 
     def get_vlan_config(self, vlan_id: int) -> VLANConfiguration:
-        """Get VLAN configuration."""
+        """Get VLAN configuration by ID."""
         endpoint = f"{self.site_path}/rest/vlanconf/{vlan_id}"
-        return self.get(endpoint, response_model=VLANConfiguration)
+        result = self.get(endpoint, response_model=VLANConfiguration)
+        return cast(VLANConfiguration, result)
 
     def get_dhcp_config(self, network_id: str) -> DHCPConfiguration:
-        """Get DHCP configuration."""
+        """Get DHCP configuration for network."""
         endpoint = f"{self.site_path}/rest/dhcpconf/{network_id}"
-        return self.get(endpoint, response_model=DHCPConfiguration)
+        result = self.get(endpoint, response_model=DHCPConfiguration)
+        return cast(DHCPConfiguration, result)
 
     # System Status
     def get_system_health(self) -> SystemHealth:
         """Get system health status."""
         endpoint = f"{self.site_path}/stat/health"
-        return self.get(endpoint, response_model=SystemHealth)
+        result = self.get(endpoint, response_model=SystemHealth)
+        return cast(SystemHealth, result)
 
     def get_process_info(self) -> List[ProcessInfo]:
         """Get process information."""
@@ -138,6 +149,7 @@ class UnifiClient(BaseAPIClient):
         return self._get_list_response(response, ServiceStatus)
 
     def get_system_status(self) -> SystemStatus:
-        """Get overall system status."""
+        """Get system status."""
         endpoint = f"{self.site_path}/stat/sysinfo"
-        return self.get(endpoint, response_model=SystemStatus)
+        result = self.get(endpoint, response_model=SystemStatus)
+        return cast(SystemStatus, result)

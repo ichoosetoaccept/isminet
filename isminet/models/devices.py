@@ -1,6 +1,6 @@
 """Device models for the UniFi Network API."""
 
-from typing import Optional, List, Any
+from typing import Optional, List, Dict, Any
 from pydantic import Field, field_validator, model_validator, ValidationError
 from pydantic_core import PydanticCustomError
 
@@ -75,7 +75,9 @@ class PortStats(
         None, description="Native network configuration ID"
     )
     ifname: Optional[str] = Field(None, description="Interface name")
-    port_delta: Optional[dict] = Field(None, description="Port delta statistics")
+    port_delta: Optional[Dict[str, Any]] = Field(
+        None, description="Port delta statistics"
+    )
     rx_multicast: Optional[int] = Field(
         None, description="Multicast packets received", ge=0
     )
@@ -184,7 +186,7 @@ class Client(
     eagerly_discovered: Optional[bool] = Field(
         None, description="Whether client was eagerly discovered"
     )
-    satisfaction_avg: Optional[dict] = Field(
+    satisfaction_avg: Optional[Dict[str, Any]] = Field(
         None, description="Average satisfaction stats"
     )
     ip: Optional[str] = Field(None, description="IP address")
@@ -200,7 +202,7 @@ class Client(
 
     @model_validator(mode="before")
     @classmethod
-    def validate_component_fields(cls, data: dict) -> dict:
+    def validate_component_fields(cls, data: Dict[str, Any]) -> Dict[str, Any]:
         """Validate fields that will be moved to component models."""
         # Check required fields
         required_fields = {"mac", "first_seen"}
@@ -241,7 +243,7 @@ class Client(
 
         return data
 
-    def __init__(self, **data):
+    def __init__(self, **data: Any) -> None:
         """Initialize client with component models."""
         # Extract component data
         network_data = {
@@ -337,7 +339,7 @@ class Device(
 
     @model_validator(mode="before")
     @classmethod
-    def validate_component_fields(cls, data: dict) -> dict:
+    def validate_component_fields(cls, data: Dict[str, Any]) -> Dict[str, Any]:
         """Validate fields that will be moved to component models."""
         # Check required fields
         required_fields = {"mac", "type", "version"}
@@ -382,7 +384,7 @@ class Device(
 
         return data
 
-    def __init__(self, **data):
+    def __init__(self, **data: Any) -> None:
         """Initialize device with component models."""
         # Extract component data
         network_data = {
