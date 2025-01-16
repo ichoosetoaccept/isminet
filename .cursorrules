@@ -1,1 +1,3 @@
-Never touch pyproject.toml. I will edit it.
+- Never touch pyproject.toml. I will edit it.
+- Always write DRY code.
+- Always respect the SRP principle.

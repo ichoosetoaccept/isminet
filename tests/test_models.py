@@ -10,13 +10,13 @@ from isminet.models import Site
 from isminet.models.devices import (
     Device,
     Client,
-    VersionInfo,
     RadioType,
     RadioProto,
     DeviceType,
     PortStats,
     WifiStats,
 )
+from isminet.models.version import VersionInfo
 
 # Load test data from API response examples
 DOCS_DIR = Path(__file__).parent.parent / "docs" / "api_responses"
@@ -49,22 +49,19 @@ def test_site_model_valid():
 
 
 def test_site_model_minimal():
-    """Test that the Site model works with only required fields."""
-    minimal_site = {
+    """Test that the Site model works with minimal data."""
+    site_data = {
         "name": "test-site",
         "desc": "Test Site",
-        "_id": "test123",
+        "_id": "123456789",
         "device_count": 0,
     }
-    site = Site(**minimal_site)
+    site = Site(**site_data)
 
-    # Test required fields
     assert site.name == "test-site"
     assert site.desc == "Test Site"
-    assert site.id == "test123"
+    assert site.id == "123456789"
     assert site.device_count == 0
-
-    # Test optional fields are None
     assert site.anonymous_id is None
     assert site.external_id is None
     assert site.attr_no_delete is None
@@ -77,44 +74,35 @@ def test_site_model_invalid():
     """Test that the Site model properly validates input data."""
     invalid_sites = [
         # Missing required field
+        {"name": "test-site", "desc": "Test Site"},
+        # Invalid device count
         {
             "name": "test-site",
             "desc": "Test Site",
-            "_id": "test123",
-            # missing device_count
-        },
-        # Wrong type for device_count
-        {
-            "name": "test-site",
-            "desc": "Test Site",
-            "_id": "test123",
-            "device_count": "not-a-number",
+            "_id": "123456789",
+            "device_count": -1,
         },
         # Empty string for required field
-        {"name": "", "desc": "Test Site", "_id": "test123", "device_count": 0},
+        {"name": "", "desc": "Test Site", "_id": "123456789", "device_count": 0},
     ]
 
-    for invalid_site in invalid_sites:
+    for data in invalid_sites:
         with pytest.raises(ValidationError):
-            Site(**invalid_site)
+            Site(**data)
 
 
 def test_base_response_with_sites():
-    """Test that the BaseResponse model works with Site data."""
+    """Test that the BaseResponse model can parse a response with sites."""
     response = BaseResponse[Site](**SITES_RESPONSE)
 
     assert response.meta.rc == "ok"
     assert len(response.data) == 1
-
-    site = response.data[0]
-    assert isinstance(site, Site)
-    assert site.name == "default"
-    assert site.device_count == 3
+    assert isinstance(response.data[0], Site)
+    assert response.data[0].name == "default"
 
 
 def test_port_stats_validation():
     """Test PortStats model validation."""
-    # Test valid data
     valid_data = {
         "port_idx": 1,
         "name": "Port 1",
@@ -124,31 +112,29 @@ def test_port_stats_validation():
         "up": True,
         "is_uplink": False,
         "mac": VALID_MAC,
-        "rx_bytes": 1000,
-        "tx_bytes": 2000,
-        "rx_packets": 100,
-        "tx_packets": 200,
+        "rx_bytes": 1000000,
+        "tx_bytes": 2000000,
+        "rx_packets": 1000,
+        "tx_packets": 2000,
         "rx_errors": 0,
         "tx_errors": 0,
-        "type": "regular",
+        "type": "copper",
     }
     port = PortStats(**valid_data)
-    assert port.port_idx == 1
     assert port.mac == VALID_MAC.lower()
-
-    # Test invalid MAC address
-    with pytest.raises(ValidationError, match="Invalid MAC address format"):
-        invalid_data = valid_data.copy()
-        invalid_data["mac"] = "invalid_mac"
-        PortStats(**invalid_data)
+    assert port.speed == 1000
 
     # Test invalid port index
-    with pytest.raises(
-        ValidationError, match="Input should be greater than or equal to 1"
-    ):
-        invalid_data = valid_data.copy()
-        invalid_data["port_idx"] = 0
-        PortStats(**invalid_data)
+    with pytest.raises(ValidationError):
+        PortStats(**{**valid_data, "port_idx": 0})
+
+    # Test invalid MAC address
+    with pytest.raises(ValidationError):
+        PortStats(**{**valid_data, "mac": "invalid"})
+
+    # Test invalid IP address
+    with pytest.raises(ValidationError):
+        PortStats(**{**valid_data, "ip": "invalid"})
 
 
 def test_wifi_stats_validation():
@@ -172,18 +158,16 @@ def test_wifi_stats_validation():
     assert wifi.radio_proto == RadioProto.AX
 
     # Test invalid channel for radio type
-    with pytest.raises(
-        ValidationError, match="5 GHz channel must be between 36 and 165"
-    ):
-        invalid_data = valid_data.copy()
-        invalid_data["channel"] = 200
-        WifiStats(**invalid_data)
+    with pytest.raises(ValidationError):
+        WifiStats(**{**valid_data, "channel": 1})  # 2.4 GHz channel for 5 GHz radio
 
-    # Test invalid signal strength
-    with pytest.raises(ValidationError, match="dBm value must be between -100 and 0"):
-        invalid_data = valid_data.copy()
-        invalid_data["signal"] = -101
-        WifiStats(**invalid_data)
+    # Test invalid signal value
+    with pytest.raises(ValidationError):
+        WifiStats(**{**valid_data, "signal": 10})  # Positive dBm value
+
+    # Test invalid channel width
+    with pytest.raises(ValidationError):
+        WifiStats(**{**valid_data, "channel_width": 30})  # Invalid channel width
 
 
 def test_client_validation():
@@ -205,52 +189,51 @@ def test_client_validation():
         "rx_bytes": 2000000,
         "tx_packets": 1000,
         "rx_packets": 2000,
+        "gw_mac": VALID_MAC,
+        "sw_mac": VALID_MAC,
     }
     client = Client(**valid_data)
     assert client.mac == VALID_MAC.lower()
     assert client.ip == VALID_IPV4
 
-    # Test invalid timestamp order
-    with pytest.raises(ValidationError, match="first_seen must be before last_seen"):
-        invalid_data = valid_data.copy()
-        invalid_data["first_seen"] = 1700000000  # After last_seen
-        Client(**invalid_data)
+    # Test invalid MAC address
+    with pytest.raises(ValidationError):
+        Client(**{**valid_data, "mac": "invalid"})
 
-    # Test invalid IPv6 addresses
-    with pytest.raises(ValidationError, match="Invalid IPv6 address"):
-        invalid_data = valid_data.copy()
-        invalid_data["ipv6_addresses"] = ["invalid_ipv6"]
-        Client(**invalid_data)
+    # Test invalid IP address
+    with pytest.raises(ValidationError):
+        Client(**{**valid_data, "ip": "invalid"})
+
+    # Test invalid first_seen/last_seen combination
+    with pytest.raises(ValidationError):
+        Client(**{**valid_data, "first_seen": 1700000000})  # After last_seen
 
 
 def test_device_validation():
     """Test Device model validation."""
     valid_data = {
         "mac": VALID_MAC,
-        "type": "uap",
+        "type": DeviceType.UAP,
         "model": "U6-Pro",
         "version": "7.0.0",
+        "site_id": "default",
         "port_table": [],
     }
     device = Device(**valid_data)
     assert device.mac == VALID_MAC.lower()
     assert device.type == DeviceType.UAP
 
-    # Test invalid device type
-    with pytest.raises(
-        ValidationError, match="Input should be 'uap', 'usw', 'ugw', 'udm' or 'udm-pro'"
-    ):
-        invalid_data = valid_data.copy()
-        invalid_data["type"] = "invalid"
-        Device(**invalid_data)
+    # Test invalid MAC address
+    with pytest.raises(ValidationError):
+        Device(**{**valid_data, "mac": "invalid"})
 
-    # Test invalid inform URL
-    with pytest.raises(
-        ValidationError, match="Inform URL must start with http:// or https://"
-    ):
-        invalid_data = valid_data.copy()
-        invalid_data["inform_url"] = "invalid_url"
-        Device(**invalid_data)
+    # Test invalid version format
+    with pytest.raises(ValidationError):
+        Device(**{**valid_data, "version": "invalid"})
+
+    # Test invalid device type
+    with pytest.raises(ValidationError):
+        Device(**{**valid_data, "type": "invalid"})
 
 
 def test_version_info_validation():

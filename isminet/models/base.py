@@ -3,19 +3,26 @@
 from typing import Generic, TypeVar, List
 from pydantic import BaseModel, Field, ConfigDict
 
+T = TypeVar("T")
 
-class Meta(BaseModel):
+
+class UnifiBaseModel(BaseModel):
+    """Base model with common configuration for all UniFi models."""
+
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+        str_min_length=1,
+        strict=True,
+    )
+
+
+class Meta(UnifiBaseModel):
     """Response metadata from the UniFi API."""
-
-    model_config = ConfigDict(str_strip_whitespace=True, str_min_length=1, strict=True)
 
     rc: str = Field(description="Response code, 'ok' indicates success")
 
 
-T = TypeVar("T")
-
-
-class BaseResponse(BaseModel, Generic[T]):
+class BaseResponse(UnifiBaseModel, Generic[T]):
     """Base response model for UniFi API endpoints."""
 
     meta: Meta
