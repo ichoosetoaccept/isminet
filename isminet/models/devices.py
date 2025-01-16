@@ -4,20 +4,18 @@ from typing import Optional, List
 from enum import Enum
 from pydantic import Field, ValidationInfo, model_validator, field_validator
 
-from .base import UnifiBaseModel
+from .base import (
+    UnifiBaseModel,
+    StatisticsMixin,
+    DeviceBaseMixin,
+    NetworkMixin,
+    SystemStatsMixin,
+)
 from .validators import (
     validate_mac,
     validate_ip,
     validate_ipv6_list,
     validate_version,
-    bytes_r_field,
-    tx_bytes_r_field,
-    rx_bytes_r_field,
-    satisfaction_field,
-    mac_field,
-    ip_field,
-    site_id_field,
-    version_field,
 )
 
 
@@ -65,7 +63,7 @@ class LedOverride(str, Enum):
     DEFAULT = "default"
 
 
-class PortStats(UnifiBaseModel):
+class PortStats(StatisticsMixin, NetworkMixin, UnifiBaseModel):
     """Port statistics and configuration."""
 
     port_idx: int = Field(description="Port index", ge=1)
@@ -75,18 +73,12 @@ class PortStats(UnifiBaseModel):
     speed: int = Field(description="Current port speed", ge=0)
     up: bool = Field(description="Whether port is up")
     is_uplink: bool = Field(description="Whether port is an uplink")
-    mac: str = mac_field
-    rx_bytes: int = Field(description="Total bytes received", ge=0)
-    tx_bytes: int = Field(description="Total bytes transmitted", ge=0)
-    rx_packets: int = Field(description="Total packets received", ge=0)
-    tx_packets: int = Field(description="Total packets transmitted", ge=0)
+    mac: str = Field(description="MAC address")
     rx_errors: int = Field(description="Total receive errors", ge=0)
     tx_errors: int = Field(description="Total transmit errors", ge=0)
     type: str = Field(description="Port type")
     poe_power: Optional[str] = Field(None, description="PoE power consumption")
-    network_name: Optional[str] = Field(None, description="Network name")
-    ip: Optional[str] = ip_field
-    netmask: Optional[str] = Field(None, description="Port netmask")
+    ip: Optional[str] = Field(None, description="IP address")
     sfp_vendor: Optional[str] = Field(None, description="SFP module vendor")
     sfp_part: Optional[str] = Field(None, description="SFP module part number")
     sfp_serial: Optional[str] = Field(None, description="SFP module serial number")
@@ -98,9 +90,6 @@ class PortStats(UnifiBaseModel):
     sfp_txpower: Optional[float] = Field(
         None, description="SFP module TX power in dBm", le=0
     )
-    bytes_r: Optional[float] = bytes_r_field
-    tx_bytes_r: Optional[float] = tx_bytes_r_field
-    rx_bytes_r: Optional[float] = rx_bytes_r_field
     autoneg: Optional[bool] = Field(None, description="Auto-negotiation enabled")
     flowctrl_rx: Optional[bool] = Field(None, description="RX flow control enabled")
     flowctrl_tx: Optional[bool] = Field(None, description="TX flow control enabled")
@@ -166,19 +155,21 @@ class PortStats(UnifiBaseModel):
 class WifiStats(UnifiBaseModel):
     """WiFi-specific statistics for wireless clients."""
 
-    ap_mac: str = mac_field
+    ap_mac: str = Field(description="MAC address")
     channel: int = Field(description="WiFi channel")
     radio: RadioType = Field(description="Radio type (ng, na, 6e)")
     radio_proto: RadioProto = Field(description="Radio protocol (ng, ac, ax, be)")
     essid: str = Field(description="Network SSID")
-    bssid: str = mac_field
+    bssid: str = Field(description="MAC address")
     signal: int = Field(description="Signal strength in dBm", le=0)
     noise: int = Field(description="Noise level in dBm", le=0)
     tx_rate: int = Field(description="Transmit rate in Kbps", ge=0)
     rx_rate: int = Field(description="Receive rate in Kbps", ge=0)
     tx_power: int = Field(description="Transmit power")
     tx_retries: int = Field(description="Number of transmit retries", ge=0)
-    satisfaction: Optional[int] = satisfaction_field
+    satisfaction: Optional[int] = Field(
+        None, description="Satisfaction score (0-100)", ge=0, le=100
+    )
     ccq: Optional[int] = Field(
         None, description="Client connection quality", ge=0, le=1000
     )
@@ -254,26 +245,16 @@ class WifiStats(UnifiBaseModel):
     _validate_mac = field_validator("ap_mac", "bssid")(validate_mac)
 
 
-class Client(UnifiBaseModel):
+class Client(DeviceBaseMixin, StatisticsMixin):
     """UniFi Network client device."""
 
-    site_id: str = site_id_field
-    mac: str = mac_field
     hostname: str = Field(description="Client hostname")
-    ip: Optional[str] = ip_field
-    last_ip: Optional[str] = ip_field
+    last_ip: Optional[str] = Field(None, description="IP address")
     is_guest: bool = Field(description="Whether client is a guest")
     is_wired: bool = Field(description="Whether client is wired")
     network: str = Field(description="Network name")
     network_id: str = Field(description="Network identifier")
-    uptime: int = Field(description="Client uptime in seconds", ge=0)
-    last_seen: int = Field(description="Last seen timestamp")
     first_seen: int = Field(description="First seen timestamp")
-    tx_bytes: int = Field(description="Total bytes transmitted", ge=0)
-    rx_bytes: int = Field(description="Total bytes received", ge=0)
-    tx_packets: int = Field(description="Total packets transmitted", ge=0)
-    rx_packets: int = Field(description="Total packets received", ge=0)
-    satisfaction: Optional[int] = satisfaction_field
     wifi_stats: Optional[WifiStats] = Field(
         None, description="WiFi statistics if wireless client"
     )
@@ -288,13 +269,9 @@ class Client(UnifiBaseModel):
         None, description="Whether QoS policy is applied"
     )
     use_fixedip: Optional[bool] = Field(None, description="Whether using fixed IP")
-    fixed_ip: Optional[str] = ip_field
+    fixed_ip: Optional[str] = Field(None, description="Fixed IP address")
     ipv6_addresses: Optional[List[str]] = Field(None, description="IPv6 addresses")
     noted: Optional[bool] = Field(None, description="Whether client is noted")
-    name: Optional[str] = Field(None, description="Custom name")
-    bytes_r: Optional[float] = bytes_r_field
-    tx_bytes_r: Optional[float] = tx_bytes_r_field
-    rx_bytes_r: Optional[float] = rx_bytes_r_field
     satisfaction_avg: Optional[dict] = Field(
         None, description="Average satisfaction stats"
     )
@@ -307,7 +284,7 @@ class Client(UnifiBaseModel):
     confidence: Optional[int] = Field(
         None, description="Device identification confidence", ge=0, le=100
     )
-    gw_mac: Optional[str] = mac_field
+    gw_mac: Optional[str] = Field(None, description="Gateway MAC address")
     gw_vlan: Optional[int] = Field(None, description="Gateway VLAN ID", ge=0, le=4095)
     disconnect_timestamp: Optional[int] = Field(
         None, description="Last disconnect timestamp"
@@ -338,7 +315,7 @@ class Client(UnifiBaseModel):
     )
     sw_depth: Optional[int] = Field(None, description="Switch depth", ge=0)
     sw_port: Optional[int] = Field(None, description="Switch port number", ge=1)
-    sw_mac: Optional[str] = mac_field
+    sw_mac: Optional[str] = Field(None, description="Switch MAC address")
     uptime_by_uap: Optional[int] = Field(None, description="Uptime tracked by AP", ge=0)
     uptime_by_usw: Optional[int] = Field(
         None, description="Uptime tracked by switch", ge=0
@@ -390,28 +367,22 @@ class Client(UnifiBaseModel):
         return v
 
 
-class Device(UnifiBaseModel):
+class Device(DeviceBaseMixin, StatisticsMixin, SystemStatsMixin):
     """UniFi Network device."""
 
-    mac: str = mac_field
-    ip: Optional[str] = ip_field
     type: DeviceType = Field(description="Device type")
     model: Optional[str] = Field(None, description="Device model")
-    version: Optional[str] = version_field
-    required_version: Optional[str] = version_field
+    version: Optional[str] = Field(None, description="Version string")
+    required_version: Optional[str] = Field(None, description="Required version string")
     port_table: List[PortStats] = Field(
         default_factory=list, description="Port statistics"
     )
-    uptime: Optional[int] = Field(None, description="Device uptime in seconds", ge=0)
-    last_seen: Optional[int] = Field(None, description="Last seen timestamp")
     adopted: Optional[bool] = Field(None, description="Whether device is adopted")
-    site_id: Optional[str] = site_id_field
-    name: Optional[str] = Field(None, description="Device name")
     led_override: Optional[LedOverride] = Field(
         None, description="LED override setting"
     )
     inform_url: Optional[str] = Field(None, description="Inform URL")
-    inform_ip: Optional[str] = ip_field
+    inform_ip: Optional[str] = Field(None, description="Inform IP address")
     cfgversion: Optional[str] = Field(None, description="Configuration version")
     config_network: Optional[dict] = Field(None, description="Network configuration")
     ethernet_table: Optional[List[dict]] = Field(None, description="Ethernet table")
@@ -420,8 +391,6 @@ class Device(UnifiBaseModel):
     uplink: Optional[dict] = Field(None, description="Uplink information")
     system_stats: Optional[dict] = Field(None, description="System statistics")
     stat: Optional[dict] = Field(None, description="Device statistics")
-    tx_bytes: Optional[int] = Field(None, description="Total bytes transmitted", ge=0)
-    rx_bytes: Optional[int] = Field(None, description="Total bytes received", ge=0)
     bytes: Optional[int] = Field(None, description="Total bytes", ge=0)
     num_sta: Optional[int] = Field(
         None, description="Number of connected clients", ge=0
@@ -432,24 +401,9 @@ class Device(UnifiBaseModel):
     guest_num_sta: Optional[int] = Field(
         None, description="Number of guest clients", ge=0
     )
-    bytes_r: Optional[float] = bytes_r_field
-    tx_bytes_r: Optional[float] = tx_bytes_r_field
-    rx_bytes_r: Optional[float] = rx_bytes_r_field
     state: Optional[int] = Field(None, description="Device state")
     upgradable: Optional[bool] = Field(None, description="Whether device is upgradable")
     discovered_via: Optional[str] = Field(None, description="How device was discovered")
-    loadavg_1: Optional[float] = Field(None, description="1-minute load average", ge=0)
-    loadavg_5: Optional[float] = Field(None, description="5-minute load average", ge=0)
-    loadavg_15: Optional[float] = Field(
-        None, description="15-minute load average", ge=0
-    )
-    temperature: Optional[float] = Field(None, description="Device temperature")
-    cpu_usage: Optional[float] = Field(
-        None, description="CPU usage percentage", ge=0, le=100
-    )
-    mem_usage: Optional[float] = Field(
-        None, description="Memory usage percentage", ge=0, le=100
-    )
     uplink_table: Optional[List[dict]] = Field(None, description="Uplink table")
     kernel_version: Optional[str] = Field(None, description="Device kernel version")
     architecture: Optional[str] = Field(None, description="Device architecture")
@@ -492,7 +446,6 @@ class Device(UnifiBaseModel):
     x_inform_authkey: Optional[str] = Field(
         None, description="Inform authentication key"
     )
-    satisfaction: Optional[int] = satisfaction_field
 
     _validate_mac = field_validator("mac")(validate_mac)
     _validate_ip = field_validator("ip", "inform_ip")(validate_ip)
