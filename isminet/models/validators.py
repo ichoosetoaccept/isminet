@@ -67,7 +67,7 @@ def validate_ip_list(v: Optional[List[str]]) -> Optional[List[str]]:
                 "invalid_ip",
                 "Invalid IPv4 address: {addr}",
                 {"addr": addr},
-            )
+            ) from err
     return validated
 
 
