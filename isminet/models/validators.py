@@ -1,6 +1,6 @@
 """Common validators and fields for UniFi Network API models."""
 
-from typing import Optional, List, Callable, Any
+from typing import Optional, Callable, Any
 from ipaddress import IPv4Address, IPv6Address
 import re
 from pydantic import Field
@@ -26,54 +26,42 @@ def create_list_validator(
     validator_func: Callable[[str], Any],
     error_type: str,
     error_msg: str,
-    transform_func: Optional[Callable[[str], str]] = None,
-) -> Callable[[Optional[List[str]]], Optional[List[str]]]:
-    """
-    Create a validator for lists of values.
+    transform_func: Callable[[str], str] = lambda x: x,
+) -> Callable[[Optional[list[str]]], Optional[list[str]]]:
+    """Create a validator for a list of values."""
 
-    Args:
-        validator_func: Function to validate each item
-        error_type: Type of error to raise on validation failure
-        error_msg: Error message template
-        transform_func: Optional function to transform valid values
-
-    Returns:
-        A validator function for lists of values
-    """
-
-    def validate_list(v: Optional[List[str]]) -> Optional[List[str]]:
+    def validator(v: Optional[list[str]]) -> Optional[list[str]]:
         if v is None:
             return None
-
         validated = []
-        errors = []
-
-        for item in v:
+        invalid = []
+        for value in v:
             try:
-                validator_func(item)
-                validated.append(transform_func(item) if transform_func else item)
-            except ValueError:
-                errors.append(item)
-
-        if errors:
+                validator_func(transform_func(value))
+                validated.append(transform_func(value))
+            except (ValueError, TypeError):
+                invalid.append(value)
+        if invalid:
             raise PydanticCustomError(
                 error_type,
-                error_msg,
-                {"values": ", ".join(errors)},
+                error_msg.format(values=", ".join(invalid)),
             )
-
         return validated
 
-    return validate_list
+    return validator
 
 
 # Create validators using the factory
 validate_ip_list = create_list_validator(
-    IPv4Address, "invalid_ip", "Invalid IPv4 addresses: {values}"
+    IPv4Address,
+    "invalid_ip",
+    "Invalid IPv4 addresses: {values}",
 )
 
 validate_ipv6_list = create_list_validator(
-    IPv6Address, "invalid_ipv6", "Invalid IPv6 addresses: {values}"
+    IPv6Address,
+    "invalid_ipv6",
+    "Invalid IPv6 addresses: {values}",
 )
 
 validate_mac_list = create_list_validator(
@@ -99,85 +87,10 @@ def validate_ip(v: Optional[str]) -> Optional[str]:
         )
 
 
-def validate_ip_list(v: Optional[List[str]]) -> Optional[List[str]]:
-    """
-    Validate a list of IPv4 addresses.
-    
-    Validates each IPv4 address in the input list using the IPv4Address class. 
-    Ensures all addresses are valid IPv4 format.
-    
-    Parameters:
-        v (Optional[List[str]]): A list of IP address strings to validate
-    
-    Returns:
-        Optional[List[str]]: The original list of IP addresses if all are valid, 
-        or None if the input is None
-    
-    Raises:
-        PydanticCustomError: If any IP address in the list is invalid, 
-        with error details specifying the problematic address
-    """
-    if v is None:
-        return None
-    validated = []
-    for addr in v:
-        try:
-            IPv4Address(addr)
-            validated.append(addr)
-        except ValueError:
-            raise PydanticCustomError(
-                "invalid_ip",
-                "Invalid IPv4 address: {addr}",
-                {"addr": addr},
-            )
-    return validated
-
-
-def validate_ipv6_list(v: Optional[List[str]]) -> Optional[List[str]]:
-    """
-    Validate a list of IPv6 addresses.
-    
-    Parameters:
-        v (Optional[List[str]]): A list of IPv6 address strings to validate
-    
-    Returns:
-        Optional[List[str]]: A list of validated IPv6 addresses, or None if input is None
-    
-    Raises:
-        PydanticCustomError: If any IPv6 address in the list is invalid, with error type "invalid_ipv6"
-    
-    Examples:
-        >>> validate_ipv6_list(["2001:0db8:85a3:0000:0000:8a2e:0370:7334"])
-        ['2001:0db8:85a3:0000:0000:8a2e:0370:7334']
-        >>> validate_ipv6_list(None) is None
-        True
-    """
-    if v is None:
-        return None
-    validated = []
-    for addr in v:
-        try:
-            IPv6Address(addr)
-            validated.append(addr)
-        except ValueError:
-            raise PydanticCustomError(
-                "invalid_ipv6",
-                "Invalid IPv6 address: {addr}",
-                {"addr": addr},
-            )
-    return validated
-
-
-def validate_version(v: Optional[str]) -> Optional[str]:
-    """Validate version format."""
-    if v is None:
-        return None
-    if not re.match(r"^\d+\.\d+\.\d+$", v):
-        raise PydanticCustomError(
-            "invalid_version",
-            "Invalid version format",
-            {},
-        )
+def validate_version(v: str) -> str:
+    """Validate firmware version string."""
+    if not re.match(r"^\d+\.\d+\.\d+", v):
+        raise ValueError("Invalid version format")
     return v
 
 
