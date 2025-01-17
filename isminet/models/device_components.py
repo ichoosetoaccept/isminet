@@ -6,6 +6,9 @@ from pydantic import Field, field_validator
 from .base import UnifiBaseModel, ValidationMixin
 from .validators import validate_ip
 from .enums import LedOverride
+from ..logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class DeviceNetwork(ValidationMixin, UnifiBaseModel):
@@ -66,8 +69,8 @@ class DeviceSecurity(ValidationMixin, UnifiBaseModel):
     guest_token: Optional[str] = Field(None, description="Guest authentication token")
 
 
-class DeviceSystem(ValidationMixin, UnifiBaseModel):
-    """System information for UniFi devices."""
+class DeviceSystem(UnifiBaseModel):
+    """Model representing the system component of a UniFi Network device."""
 
     system_stats: Optional[Dict[str, Any]] = Field(
         None, description="System statistics"
@@ -87,3 +90,30 @@ class DeviceSystem(ValidationMixin, UnifiBaseModel):
         None, description="LED override setting"
     )
     adopted: Optional[bool] = Field(None, description="Whether device is adopted")
+
+    def __init__(self, **data: Any) -> None:
+        """Initialize the device system and log initialization details."""
+        super().__init__(**data)
+        logger.info(
+            event="device_system_initialized",
+            state=self.state,
+            state_code=self.state_code,
+            unsupported=self.unsupported,
+            upgradable=self.upgradable,
+            adopted=self.adopted,
+            discovered_via=self.discovered_via,
+            led_override=self.led_override,
+        )
+
+    def model_dump(self, **kwargs: Any) -> Dict[str, Any]:
+        """Dump model to dict and log changes."""
+        data = super().model_dump(**kwargs)
+        logger.debug(
+            "device_system_dumped",
+            state=self.state,
+            state_code=self.state_code,
+            system_stats=self.system_stats,
+            adopted=self.adopted,
+            upgradable=self.upgradable,
+        )
+        return data

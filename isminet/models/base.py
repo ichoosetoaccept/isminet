@@ -24,39 +24,45 @@ class UnifiBaseModel(BaseModel):
         extra="ignore", str_strip_whitespace=True, validate_assignment=True
     )
 
+    _logger = get_logger(__name__)
+
     def __init__(self, **data: Any) -> None:
-        """Initialize model with logging."""
+        """Initialize the model and log initialization details."""
         try:
             super().__init__(**data)
-            logger.debug(
-                "model_initialized",
+            self._logger.info(
+                event="model_initialized",
                 model=self.__class__.__name__,
-                fields=list(self.model_fields.keys()),
                 provided_fields=list(data.keys()),
             )
         except ValidationError as e:
-            logger.error(
-                "model_validation_failed",
+            self._logger.error(
+                event="model_validation_failed",
                 model=self.__class__.__name__,
                 error=str(e),
-                error_type=type(e).__name__,
-                validation_errors=e.errors(),
-                provided_fields=list(data.keys()),
+                error_type=e.__class__.__name__,
+                validation_errors=[
+                    {
+                        "type": err["type"],
+                        "loc": list(err["loc"]),
+                        "msg": err["msg"],
+                        "input": err["input"],
+                        "ctx": err.get("ctx", {}),
+                    }
+                    for err in e.errors()
+                ],
             )
             raise
 
     def model_dump(self, **kwargs: Any) -> Dict[str, Any]:
-        """Log model serialization and return dumped data."""
-        result = super().model_dump(**kwargs)
-        logger.debug(
-            "model_serialized",
+        """Dump the model to a dictionary and log the serialization."""
+        data = super().model_dump(**kwargs)
+        self._logger.info(
+            event="model_serialized",
             model=self.__class__.__name__,
-            included_fields=list(result.keys()),
-            exclude_unset=kwargs.get("exclude_unset", False),
-            exclude_defaults=kwargs.get("exclude_defaults", False),
-            exclude_none=kwargs.get("exclude_none", False),
+            fields=list(data.keys()),
         )
-        return result
+        return data
 
 
 class ValidationMixin(UnifiBaseModel):

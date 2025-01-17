@@ -95,4 +95,16 @@ class APIConfig(BaseSettings):
     @classmethod
     def from_env(cls, **kwargs: Any) -> "APIConfig":
         """Create config from environment variables."""
-        return cls(**kwargs)
+        from isminet.logging import get_logger
+
+        logger = get_logger(__name__)
+        config = cls(**kwargs)
+        logger.info(
+            "config_loaded",
+            host=config.host,
+            port=config.port,
+            verify_ssl=config.verify_ssl,
+            site=config.site,
+            api_version=config.api_version,
+        )
+        return config

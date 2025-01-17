@@ -1,11 +1,15 @@
 """System models for UniFi Network API."""
 
-from typing import List, Optional
+from typing import List, Optional, Any, Dict
 from pydantic import Field, field_validator, model_validator
+from pydantic_core import PydanticCustomError
 
 from .base import UnifiBaseModel
 from .enums import DeviceType
 from .validators import VERSION_PATTERN
+from ..logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class ProcessInfo(UnifiBaseModel):
@@ -71,33 +75,74 @@ class ServiceStatus(UnifiBaseModel):
 
 
 class SystemStatus(UnifiBaseModel):
-    """System status model."""
+    """Model representing the system status of a UniFi Network device."""
 
     device_type: DeviceType = Field(description="Device type")
     version: str = Field(description="Firmware version")
-    update_version: Optional[str] = Field(None, description="Available update version")
-    uptime: int = Field(description="System uptime", ge=0)
+    uptime: int = Field(description="Uptime in seconds", ge=0)
     health: List[SystemHealth] = Field(description="System health status")
     processes: List[ProcessInfo] = Field(description="Running processes")
     services: List[ServiceStatus] = Field(description="Service status")
-    alerts: Optional[List[str]] = Field(None, description="System alerts")
-    upgradable: bool = Field(description="System can be upgraded")
-    update_available: bool = Field(description="System update available")
-    storage_usage: int = Field(description="Storage usage percentage", ge=0, le=100)
+    upgradable: bool = Field(description="Whether device is upgradable")
+    update_available: bool = Field(description="Whether update is available")
+    storage_usage: int = Field(description="Storage usage in bytes", ge=0)
     storage_available: int = Field(description="Available storage in bytes", ge=0)
+    alerts: Optional[List[str]] = Field(None, description="System alerts")
+
+    def __init__(self, **data: Any) -> None:
+        """Initialize the system status and log initialization details."""
+        super().__init__(**data)
+        logger.info(
+            event="system_status_initialized",
+            device_type=self.device_type,
+            version=self.version,
+            update_available=self.update_available,
+            health_checks=len(self.health),
+            processes=len(self.processes),
+            services=len(self.services),
+            alerts=self.alerts,
+            storage_usage=self.storage_usage,
+        )
+
+    @field_validator("version")
+    @classmethod
+    def validate_version(cls, v: str) -> str:
+        """Validate version fields."""
+        try:
+            if not VERSION_PATTERN.match(v):
+                raise PydanticCustomError(
+                    "invalid_version_format",
+                    "Version must be in format x.y.z",
+                    {},
+                )
+            return v
+        except Exception:
+            logger.error(
+                event="system_version_validation_failed",
+                version=v,
+                error="invalid_version_format",
+            )
+            raise
 
     @field_validator("health")
     @classmethod
     def validate_health(cls, v: List[SystemHealth]) -> List[SystemHealth]:
         """Validate health field."""
         if not v:
+            logger.error("system_health_validation_failed", error="empty_health_list")
             raise ValueError("List should have at least 1 item")
+        logger.debug("system_health_validated", health_checks=len(v))
         return v
 
-    @field_validator("version", "update_version")
-    @classmethod
-    def validate_version(cls, v: Optional[str]) -> Optional[str]:
-        """Validate version fields."""
-        if v is not None and not VERSION_PATTERN.match(v):
-            raise ValueError("Version must be in format x.y.z")
-        return v
+    def model_dump(self, **kwargs: Any) -> Dict[str, Any]:
+        """Dump model to dict and log changes."""
+        data = super().model_dump(**kwargs)
+        logger.debug(
+            "system_status_dumped",
+            device_type=self.device_type,
+            version=self.version,
+            health_status=[h.status for h in self.health],
+            service_status={s.name: s.status for s in self.services},
+            storage_usage=self.storage_usage,
+        )
+        return data

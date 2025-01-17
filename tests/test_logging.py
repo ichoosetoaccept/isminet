@@ -292,3 +292,201 @@ def test_model_serialization_logging(capsys: pytest.CaptureFixture[str]) -> None
     assert dump_log["model"] == "UnifiBaseModel"
     assert "included_fields" in dump_log
     assert dump_log["exclude_unset"] is True
+
+
+def test_system_status_initialization_logging(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Test that system status initialization is logged correctly."""
+    setup_logging(level="INFO", development_mode=False)
+    from isminet.models.system import (
+        SystemStatus,
+        DeviceType,
+    )
+
+    test_data = {
+        "device_type": DeviceType.UAP,
+        "version": "1.2.3",
+        "uptime": 3600,
+        "health": [
+            {
+                "device_type": DeviceType.UAP,
+                "subsystem": "test",
+                "status": "ok",
+                "status_code": 0,
+                "status_message": "All good",
+                "last_check": 1000,
+                "next_check": 2000,
+            }
+        ],
+        "processes": [
+            {
+                "pid": 1,
+                "name": "test",
+                "cpu_usage": 10.5,
+                "mem_usage": 20.5,
+                "mem_rss": 1024,
+                "mem_vsz": 2048,
+            }
+        ],
+        "services": [
+            {"name": "test_service", "status": "running", "enabled": True, "pid": 1}
+        ],
+        "upgradable": False,
+        "update_available": False,
+        "storage_usage": 1024,
+        "storage_available": 4096,
+    }
+
+    # Initialize system status which should trigger logging
+    SystemStatus(
+        **test_data
+    )  # Don't need to store the instance since we're only testing the logs
+
+    # Check log output
+    captured = capsys.readouterr()
+    log_entries = [json.loads(line) for line in captured.out.strip().split("\n")]
+    init_log = next(
+        entry for entry in log_entries if entry["event"] == "system_status_initialized"
+    )
+
+    assert init_log["device_type"] == "uap"
+    assert init_log["version"] == "1.2.3"
+    assert init_log["update_available"] is False
+    assert init_log["health_checks"] == 1
+    assert init_log["processes"] == 1
+    assert init_log["services"] == 1
+    assert init_log["storage_usage"] == 1024
+
+
+@pytest.mark.parametrize(
+    "health_status,expected_log_level",
+    [("ok", "debug"), ("warning", "warning"), ("error", "error")],
+)
+def test_system_health_validation_logging(
+    health_status: str, expected_log_level: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Test that system health validation logs appropriate messages based on status."""
+    setup_logging(level="DEBUG", development_mode=False)
+    from isminet.models.system import SystemHealth, DeviceType
+
+    # Create health instance but don't need to store it since we're only testing logs
+    SystemHealth(
+        device_type=DeviceType.UAP,
+        subsystem="test",
+        status=health_status,
+        status_code=0,
+        status_message="Test message",
+        last_check=1000,
+        next_check=2000,
+    )
+
+    # Check log output
+    captured = capsys.readouterr()
+    log_entries = [json.loads(line) for line in captured.out.strip().split("\n")]
+
+    # Check for model initialization logs
+    init_logs = [
+        entry for entry in log_entries if entry["event"] == "model_initialized"
+    ]
+    assert len(init_logs) > 0
+    init_log = init_logs[0]
+    assert init_log["model"] == "SystemHealth"
+    assert "status" in init_log["provided_fields"]
+    assert (
+        init_log["level"] == "info"
+    )  # Model initialization is always logged at INFO level
+
+
+def test_system_status_dump_logging(capsys: pytest.CaptureFixture[str]) -> None:
+    """Test that system status dump operation is logged correctly."""
+    setup_logging(level="DEBUG", development_mode=False)
+    from isminet.models.system import (
+        SystemStatus,
+        DeviceType,
+    )
+
+    test_data = {
+        "device_type": DeviceType.UAP,
+        "version": "1.2.3",
+        "uptime": 3600,
+        "health": [
+            {
+                "device_type": DeviceType.UAP,
+                "subsystem": "test",
+                "status": "ok",
+                "status_code": 0,
+                "status_message": "All good",
+                "last_check": 1000,
+                "next_check": 2000,
+            }
+        ],
+        "processes": [
+            {
+                "pid": 1,
+                "name": "test",
+                "cpu_usage": 10.5,
+                "mem_usage": 20.5,
+                "mem_rss": 1024,
+                "mem_vsz": 2048,
+            }
+        ],
+        "services": [
+            {"name": "test_service", "status": "running", "enabled": True, "pid": 1}
+        ],
+        "upgradable": False,
+        "update_available": False,
+        "storage_usage": 1024,
+        "storage_available": 4096,
+    }
+
+    system_status = SystemStatus(
+        **test_data
+    )  # Need to store this one since we call model_dump() on it
+    system_status.model_dump()
+
+    # Check log output
+    captured = capsys.readouterr()
+    log_entries = [json.loads(line) for line in captured.out.strip().split("\n")]
+    dump_log = next(
+        entry for entry in log_entries if entry["event"] == "system_status_dumped"
+    )
+
+    assert dump_log["device_type"] == "uap"
+    assert dump_log["version"] == "1.2.3"
+    assert dump_log["health_status"] == ["ok"]
+    assert dump_log["service_status"] == {"test_service": "running"}
+    assert dump_log["storage_usage"] == 1024
+
+
+def test_config_loading_logging(
+    env_setup: None, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Test that configuration loading is logged correctly."""
+    setup_logging(level="INFO", development_mode=False)
+    from isminet.config import APIConfig
+
+    # Set test environment variables
+    os.environ.update(
+        {
+            "UNIFI_API_KEY": "test_key",
+            "UNIFI_HOST": "test.host",
+            "UNIFI_PORT": "8443",
+            "UNIFI_VERIFY_SSL": "true",
+        }
+    )
+
+    APIConfig.from_env()  # Don't need to store since we're only testing logs
+
+    # Check log output
+    captured = capsys.readouterr()
+    log_entries = [json.loads(line) for line in captured.out.strip().split("\n")]
+    config_logs = [entry for entry in log_entries if entry["event"] == "config_loaded"]
+
+    assert len(config_logs) > 0
+    config_log = config_logs[0]
+    assert config_log["host"] == "test.host"
+    assert config_log["port"] == 8443
+    assert config_log["verify_ssl"] is True
+    # API key should not be logged
+    assert "api_key" not in config_log
