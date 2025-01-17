@@ -20,10 +20,17 @@ class UnifiClient(BaseClient):
         """Initialize UniFi Network API client."""
         super().__init__(config)
         self.site_path = f"/api/s/{config.site}"
+        self.logger.info(
+            "initialized_unifi_client",
+            site=config.site,
+            site_path=self.site_path,
+        )
 
     def _get_site_path(self, endpoint: str) -> str:
         """Get site-specific API endpoint path."""
-        return f"{self.site_path}/{endpoint}"
+        path = f"{self.site_path}/{endpoint}"
+        self.logger.debug("constructed_site_path", endpoint=endpoint, path=path)
+        return path
 
     def _get_list_response(
         self,
@@ -44,65 +51,47 @@ class UnifiClient(BaseClient):
             ResponseValidationError: If response structure is invalid or validation fails
         """
         if not isinstance(response, dict):
+            self.logger.error(
+                "invalid_response_structure",
+                expected="dictionary",
+                received=type(response).__name__,
+            )
             raise ResponseValidationError(
                 "Invalid response structure: expected dictionary", None
             )
 
         if "data" not in response:
+            self.logger.error("missing_data_field", response_keys=list(response.keys()))
             raise ResponseValidationError(
                 "Invalid response structure: missing 'data' field", None
             )
 
         data = response["data"]
         if not isinstance(data, list):
+            self.logger.error(
+                "invalid_data_type",
+                expected="list",
+                received=type(data).__name__,
+            )
             raise ResponseValidationError(
                 "Invalid response structure: 'data' field must be a list", None
             )
 
         try:
-            return [model_class(**item) for item in data]
+            items = [model_class(**item) for item in data]
+            self.logger.debug(
+                "validated_list_response",
+                model=model_class.__name__,
+                items_count=len(items),
+            )
+            return items
         except ValidationError as e:
+            self.logger.error(
+                "response_validation_failed",
+                model=model_class.__name__,
+                error=str(e),
+            )
             raise ResponseValidationError("Failed to validate response items", e)
-
-    def _get_single_response(
-        self,
-        response: Dict[str, Any],
-        model_class: Type[T],
-    ) -> T:
-        """
-        Extract and validate a single item response from the UniFi API.
-
-        Args:
-            response: Raw API response dictionary
-            model_class: Pydantic model class to validate item against
-
-        Returns:
-            Validated model instance
-
-        Raises:
-            ResponseValidationError: If response structure is invalid or validation fails
-        """
-        if not isinstance(response, dict):
-            raise ResponseValidationError(
-                "Invalid response structure: expected dictionary", None
-            )
-
-        if "data" not in response:
-            raise ResponseValidationError(
-                "Invalid response structure: missing 'data' field", None
-            )
-
-        try:
-            data = response["data"][0]
-        except IndexError:
-            raise ResponseValidationError("Response data is empty", None)
-
-        try:
-            return model_class(**data)
-        except ValidationError as e:
-            raise ResponseValidationError(
-                f"Failed to validate {model_class.__name__}", e
-            )
 
     def _get_list_by_endpoint(
         self,
@@ -123,8 +112,18 @@ class UnifiClient(BaseClient):
             ResponseValidationError: If response validation fails
             APIError: If API request fails
         """
+        self.logger.debug(
+            "fetching_list",
+            endpoint=endpoint,
+            model=model_class.__name__,
+        )
         response: Dict[str, Any] = self.get(endpoint)  # type: ignore
         if not isinstance(response, dict):
+            self.logger.error(
+                "invalid_response_structure",
+                expected="dictionary",
+                received=type(response).__name__,
+            )
             raise ResponseValidationError("Invalid response structure", None)
         return self._get_list_response(response, model_class)
 
@@ -148,9 +147,25 @@ class UnifiClient(BaseClient):
         Raises:
             APIError: If no item with matching MAC is found
         """
+        self.logger.debug(
+            "searching_by_mac",
+            mac=mac,
+            item_type=item_type,
+            items_count=len(items),
+        )
         for item in items:
             if item.mac == mac:  # type: ignore
+                self.logger.debug(
+                    "found_item_by_mac",
+                    mac=mac,
+                    item_type=item_type,
+                )
                 return item
+        self.logger.error(
+            "item_not_found",
+            mac=mac,
+            item_type=item_type,
+        )
         raise APIError(f"{item_type} with MAC {mac} not found")
 
     def get_devices(self) -> List[Device]:
@@ -164,8 +179,11 @@ class UnifiClient(BaseClient):
             ResponseValidationError: If response validation fails
             APIError: If API request fails
         """
+        self.logger.info("fetching_devices")
         endpoint = self._get_site_path("stat/device")
-        return self._get_list_by_endpoint(endpoint, Device)
+        devices = self._get_list_by_endpoint(endpoint, Device)
+        self.logger.info("fetched_devices", count=len(devices))
+        return devices
 
     def get_clients(self) -> List[Client]:
         """
@@ -178,8 +196,11 @@ class UnifiClient(BaseClient):
             ResponseValidationError: If response validation fails
             APIError: If API request fails
         """
+        self.logger.info("fetching_clients")
         endpoint = self._get_site_path("stat/sta")
-        return self._get_list_by_endpoint(endpoint, Client)
+        clients = self._get_list_by_endpoint(endpoint, Client)
+        self.logger.info("fetched_clients", count=len(clients))
+        return clients
 
     def get_device(self, mac: str) -> Device:
         """
@@ -195,8 +216,16 @@ class UnifiClient(BaseClient):
             ResponseValidationError: If response validation fails
             APIError: If API request fails
         """
+        self.logger.info("fetching_device", mac=mac)
         devices = self.get_devices()
-        return self._get_by_mac(devices, mac, "Device")
+        device = self._get_by_mac(devices, mac, "Device")
+        self.logger.info(
+            "fetched_device",
+            mac=mac,
+            model=device.model,
+            type=device.type,
+        )
+        return device
 
     def get_client(self, mac: str) -> Client:
         """
@@ -212,8 +241,72 @@ class UnifiClient(BaseClient):
             ResponseValidationError: If response validation fails
             APIError: If API request fails
         """
+        self.logger.info("fetching_client", mac=mac)
         clients = self.get_clients()
-        return self._get_by_mac(clients, mac, "Client")
+        client = self._get_by_mac(clients, mac, "Client")
+        self.logger.info(
+            "fetched_client",
+            mac=mac,
+            hostname=client.hostname,
+            is_wired=client.is_wired,
+            is_guest=client.is_guest,
+        )
+        return client
+
+    def _get_single_response(
+        self,
+        response: Dict[str, Any],
+        model_class: Type[T],
+    ) -> T:
+        """
+        Extract and validate a single item response from the UniFi API.
+
+        Args:
+            response: Raw API response dictionary
+            model_class: Pydantic model class to validate item against
+
+        Returns:
+            Validated model instance
+
+        Raises:
+            ResponseValidationError: If response structure is invalid or validation fails
+        """
+        if not isinstance(response, dict):
+            self.logger.error(
+                "invalid_response_structure",
+                expected="dictionary",
+                received=type(response).__name__,
+            )
+            raise ResponseValidationError(
+                "Invalid response structure: expected dictionary", None
+            )
+
+        if "data" not in response:
+            self.logger.error("missing_data_field", response_keys=list(response.keys()))
+            raise ResponseValidationError(
+                "Invalid response structure: missing 'data' field", None
+            )
+
+        try:
+            data = response["data"][0]
+            item = model_class(**data)
+            self.logger.debug(
+                "validated_single_response",
+                model=model_class.__name__,
+            )
+            return item
+        except IndexError:
+            self.logger.error("empty_response_data")
+            raise ResponseValidationError("Response data is empty", None)
+        except ValidationError as e:
+            self.logger.error(
+                "response_validation_failed",
+                model=model_class.__name__,
+                error=str(e),
+            )
+            raise ResponseValidationError(
+                f"Failed to validate {model_class.__name__}", e
+            )
 
     def _get_single_by_endpoint(
         self,
@@ -234,6 +327,11 @@ class UnifiClient(BaseClient):
             ResponseValidationError: If response validation fails
             APIError: If API request fails
         """
+        self.logger.debug(
+            "fetching_single",
+            endpoint=endpoint,
+            model=model_class.__name__,
+        )
         response: Dict[str, Any] = self.get(endpoint)  # type: ignore
         return self._get_single_response(response, model_class)
 
@@ -251,8 +349,16 @@ class UnifiClient(BaseClient):
             ResponseValidationError: If response validation fails
             APIError: If API request fails
         """
+        self.logger.info("fetching_network_config", network_id=network_id)
         endpoint = self._get_site_path(f"rest/networkconf/{network_id}")
-        return self._get_single_by_endpoint(endpoint, NetworkConfiguration)
+        config = self._get_single_by_endpoint(endpoint, NetworkConfiguration)
+        self.logger.info(
+            "fetched_network_config",
+            network_id=network_id,
+            name=config.name,
+            purpose=config.purpose,
+        )
+        return config
 
     def get_system_health(self) -> SystemStatus:
         """
@@ -265,5 +371,13 @@ class UnifiClient(BaseClient):
             ResponseValidationError: If response validation fails
             APIError: If API request fails
         """
+        self.logger.info("fetching_system_health")
         endpoint = self._get_site_path("stat/health")
-        return self._get_single_by_endpoint(endpoint, SystemStatus)
+        status = self._get_single_by_endpoint(endpoint, SystemStatus)
+        self.logger.info(
+            "fetched_system_health",
+            health_checks=len(status.health),
+            processes=len(status.processes),
+            services=len(status.services),
+        )
+        return status
