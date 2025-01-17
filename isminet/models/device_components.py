@@ -1,6 +1,6 @@
 """Device component models for UniFi Network devices."""
 
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from pydantic import Field, field_validator
 
 from .base import UnifiBaseModel, ValidationMixin
@@ -13,10 +13,16 @@ class DeviceNetwork(ValidationMixin, UnifiBaseModel):
 
     inform_url: Optional[str] = Field(None, description="Inform URL")
     inform_ip: Optional[str] = Field(None, description="Inform IP address")
-    config_network: Optional[dict] = Field(None, description="Network configuration")
-    ethernet_table: Optional[List[dict]] = Field(None, description="Ethernet table")
-    uplink: Optional[dict] = Field(None, description="Uplink information")
-    uplink_table: Optional[List[dict]] = Field(None, description="Uplink table")
+    config_network: Optional[Dict[str, Any]] = Field(
+        None, description="Network configuration"
+    )
+    ethernet_table: Optional[List[Dict[str, Any]]] = Field(
+        None, description="Ethernet table"
+    )
+    uplink: Optional[Dict[str, Any]] = Field(None, description="Uplink information")
+    uplink_table: Optional[List[Dict[str, Any]]] = Field(
+        None, description="Uplink table"
+    )
 
     _validate_ip = field_validator("inform_ip")(validate_ip)
 
@@ -32,8 +38,8 @@ class DeviceNetwork(ValidationMixin, UnifiBaseModel):
 class DeviceWireless(ValidationMixin, UnifiBaseModel):
     """Wireless configuration for UniFi devices."""
 
-    radio_table: Optional[List[dict]] = Field(None, description="Radio table")
-    vap_table: Optional[List[dict]] = Field(None, description="VAP table")
+    radio_table: Optional[List[Dict[str, Any]]] = Field(None, description="Radio table")
+    vap_table: Optional[List[Dict[str, Any]]] = Field(None, description="VAP table")
     num_sta: Optional[int] = Field(
         None, description="Number of connected clients", ge=0
     )
@@ -63,7 +69,9 @@ class DeviceSecurity(ValidationMixin, UnifiBaseModel):
 class DeviceSystem(ValidationMixin, UnifiBaseModel):
     """System information for UniFi devices."""
 
-    system_stats: Optional[dict] = Field(None, description="System statistics")
+    system_stats: Optional[Dict[str, Any]] = Field(
+        None, description="System statistics"
+    )
     state: Optional[int] = Field(None, description="Device state")
     state_code: Optional[int] = Field(None, description="Device state code")
     hw_caps: Optional[int] = Field(None, description="Hardware capabilities")

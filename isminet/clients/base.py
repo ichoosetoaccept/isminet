@@ -1,168 +1,182 @@
 """Base API client implementation."""
 
-import logging
-from typing import Any, TypeVar
-from functools import wraps
+import time
+from typing import Any, Dict, List, Optional, Type, Union, TypeVar, ParamSpec
+from urllib.parse import urljoin
 
-import requests
-from requests.exceptions import RequestException
+from requests import Response, Session
+from requests.exceptions import ConnectionError
+from pydantic import ValidationError
 
 from ..config import APIConfig
-from ..models import BaseResponse  # We'll create this later
+from ..models.base import UnifiBaseModel
 
-# Configure logging
-logger = logging.getLogger(__name__)
-
-# Type variable for response models
-T = TypeVar("T", bound=BaseResponse)
-
-
-def with_retry(max_retries: int = 3, backoff_factor: float = 0.5):
-    """Decorator for retrying failed API requests.
-
-    Args:
-        max_retries: Maximum number of retry attempts
-        backoff_factor: Delay multiplier between retries
-    """
-
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            last_error = None
-            for attempt in range(max_retries + 1):
-                try:
-                    return func(*args, **kwargs)
-                except RequestException as e:
-                    last_error = e
-                    if attempt == max_retries:
-                        break
-                    delay = backoff_factor * (2**attempt)
-                    logger.warning(
-                        "Request failed (attempt %d/%d). Retrying in %.1f seconds...",
-                        attempt + 1,
-                        max_retries,
-                        delay,
-                    )
-                    import time
-
-                    time.sleep(delay)
-            raise last_error
-
-        return wrapper
-
-    return decorator
+T = TypeVar("T", bound=UnifiBaseModel)
+P = ParamSpec("P")
+R = TypeVar("R")
 
 
 class APIError(Exception):
-    """Base exception for API errors."""
+    """Base class for API errors."""
 
-    def __init__(self, message: str, response: requests.Response | None = None):
+
+class AuthenticationError(APIError):
+    """Authentication error."""
+
+
+class PermissionError(APIError):
+    """Permission error."""
+
+
+class NotFoundError(APIError):
+    """Resource not found error."""
+
+
+class ResponseValidationError(APIError):
+    """Response validation error."""
+
+    def __init__(
+        self, message: str, validation_error: Optional[ValidationError] = None
+    ) -> None:
+        """Initialize a ResponseValidationError with an optional validation error."""
         super().__init__(message)
-        self.response = response
-        self.status_code = response.status_code if response else None
+        self.validation_error = validation_error
 
 
 class BaseAPIClient:
-    """Base implementation for UniFi Network API client."""
+    """Base API client implementation."""
 
     def __init__(self, config: APIConfig) -> None:
-        """Initialize API client.
-
-        Args:
-            config: API configuration
-        """
+        """Initialize API client with configuration."""
         self.config = config
-        self.session = self._create_session()
+        self._session: Optional[Session] = None
+        self._is_closed = False
 
-    def _create_session(self) -> requests.Session:
-        """Create and configure requests session.
-
-        Returns:
-            Configured requests Session
-        """
-        session = requests.Session()
-
-        # Set default headers
-        session.headers.update(self.config.get_headers())
-
-        # Configure SSL verification
-        session.verify = self.config.verify_ssl
-        if not self.config.verify_ssl:
-            # Disable SSL warning if verification is disabled
-            import urllib3
-
-            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
-        return session
-
-    @with_retry()
-    def _request(
-        self,
-        method: str,
-        endpoint: str,
-        **kwargs: Any,
-    ) -> dict[str, Any]:
-        """Make HTTP request to API.
-
-        Args:
-            method: HTTP method
-            endpoint: API endpoint path
-            **kwargs: Additional arguments to pass to requests
-
-        Returns:
-            Response data as dict
-
-        Raises:
-            APIError: If request fails
-        """
-        url = f"{self.config.api_url}/{endpoint.lstrip('/')}"
-
-        try:
-            response = self.session.request(
-                method=method,
-                url=url,
-                timeout=self.config.timeout,
-                **kwargs,
-            )
-
-            response.raise_for_status()
-            return response.json()
-
-        except RequestException as e:
-            message = f"API request failed: {str(e)}"
-            if hasattr(e, "response") and e.response is not None:
-                try:
-                    error_data = e.response.json()
-                    if "meta" in error_data and "msg" in error_data["meta"]:
-                        message = error_data["meta"]["msg"]
-                except ValueError:
-                    pass
-            raise APIError(message, getattr(e, "response", None)) from e
-
-    def get(self, endpoint: str, **kwargs: Any) -> dict[str, Any]:
-        """Make GET request to API endpoint."""
-        return self._request("GET", endpoint, **kwargs)
-
-    def post(self, endpoint: str, **kwargs: Any) -> dict[str, Any]:
-        """Make POST request to API endpoint."""
-        return self._request("POST", endpoint, **kwargs)
-
-    def put(self, endpoint: str, **kwargs: Any) -> dict[str, Any]:
-        """Make PUT request to API endpoint."""
-        return self._request("PUT", endpoint, **kwargs)
-
-    def delete(self, endpoint: str, **kwargs: Any) -> dict[str, Any]:
-        """Make DELETE request to API endpoint."""
-        return self._request("DELETE", endpoint, **kwargs)
+    @property
+    def session(self) -> Session:
+        """Get or create session."""
+        if self._is_closed:
+            raise RuntimeError("Session is closed")
+        if self._session is None:
+            self._session = Session()
+            self._session.verify = self.config.verify_ssl
+            self._session.headers.update(self.config.get_headers())
+        return self._session
 
     def close(self) -> None:
-        """Close the API client session."""
-        self.session.close()
+        """Close session."""
+        if self._session is not None:
+            self._session.close()
+            self._session = None
+        self._is_closed = True
 
     def __enter__(self) -> "BaseAPIClient":
         """Enter context manager."""
+        self._is_closed = False
         return self
 
-    def __exit__(self, exc_type, exc_value, traceback) -> None:
+    def __exit__(self, *args: Any) -> None:
         """Exit context manager."""
         self.close()
+
+    def get(
+        self,
+        path: str,
+        params: Optional[Dict[str, Any]] = None,
+        response_model: Optional[Type[T]] = None,
+    ) -> Union[Dict[str, Any], T, List[T]]:
+        """Send GET request."""
+        return self.request("GET", path, params=params, response_model=response_model)
+
+    def post(
+        self,
+        path: str,
+        json: Optional[Dict[str, Any]] = None,
+        response_model: Optional[Type[T]] = None,
+    ) -> Union[Dict[str, Any], T, List[T]]:
+        """Send POST request."""
+        return self.request("POST", path, json=json, response_model=response_model)
+
+    def put(
+        self,
+        path: str,
+        json: Optional[Dict[str, Any]] = None,
+        response_model: Optional[Type[T]] = None,
+    ) -> Union[Dict[str, Any], T, List[T]]:
+        """Send PUT request."""
+        return self.request("PUT", path, json=json, response_model=response_model)
+
+    def delete(
+        self,
+        path: str,
+        response_model: Optional[Type[T]] = None,
+    ) -> Union[Dict[str, Any], T, List[T]]:
+        """Send DELETE request."""
+        return self.request("DELETE", path, response_model=response_model)
+
+    def request(
+        self,
+        method: str,
+        path: str,
+        params: Optional[Dict[str, Any]] = None,
+        json: Optional[Dict[str, Any]] = None,
+        response_model: Optional[Type[T]] = None,
+    ) -> Union[Dict[str, Any], T, List[T]]:
+        """Send HTTP request."""
+        if self._is_closed:
+            raise RuntimeError("Session is closed")
+
+        url = urljoin(self.config.api_url, path)
+        retries = 3
+        delay = 1.0
+
+        while True:
+            try:
+                response = self.session.request(
+                    method,
+                    url,
+                    params=params,
+                    json=json,
+                    timeout=self.config.timeout,
+                )
+                break
+            except ConnectionError:
+                if retries <= 0:
+                    raise
+                retries -= 1
+                time.sleep(delay)
+                delay *= 2
+
+        if not response.ok:
+            self._handle_error_response(response)
+
+        data = response.json()
+
+        if response_model is not None:
+            try:
+                if isinstance(data.get("data"), list):
+                    return [response_model(**item) for item in data["data"]]
+                return response_model(**data["data"])
+            except ValidationError as e:
+                raise ResponseValidationError("Response validation failed", e)
+
+        return data
+
+    def _handle_error_response(self, response: Response) -> None:
+        """Handle error response."""
+        error_msg = response.text
+        try:
+            error_data = response.json()
+            if "meta" in error_data and "msg" in error_data["meta"]:
+                error_msg = error_data["meta"]["msg"]
+        except Exception:
+            pass
+
+        if response.status_code == 401:
+            raise AuthenticationError(error_msg)
+        elif response.status_code == 403:
+            raise PermissionError(error_msg)
+        elif response.status_code == 404:
+            raise NotFoundError(error_msg)
+        else:
+            raise APIError(error_msg)

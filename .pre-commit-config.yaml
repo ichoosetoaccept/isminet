@@ -6,39 +6,53 @@
 # fail_fast: true
 minimum_pre_commit_version: 4.0.1
 repos:
--   repo: meta
+  - repo: meta
     hooks:
-    -   id: check-hooks-apply
-    -   id: check-useless-excludes
+      - id: check-hooks-apply
+      - id: check-useless-excludes
 
--   repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
-    hooks:
-    -   id: trailing-whitespace
-    -   id: end-of-file-fixer
-    -   id: check-yaml
-    -   id: check-toml
-    -   id: check-added-large-files
-    -   id: check-case-conflict
-    -   id: check-docstring-first
-#    -   id: check-executables-have-shebangs
-    -   id: check-shebang-scripts-are-executable
-    -   id: detect-private-key
-    -   id: forbid-submodules
-    -   id: no-commit-to-branch
-
--   repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.9.1
-    hooks:
-    # Run the linter.
-    - id: ruff
-      args: [ --fix ]
-    # Run the formatter.
-    - id: ruff-format
-
--   repo: https://github.com/astral-sh/uv-pre-commit
+  - repo: https://github.com/astral-sh/uv-pre-commit
     # uv version.
     rev: 0.5.18
     hooks:
-    # Update the uv lockfile
-    - id: uv-lock
+      # Update the uv lockfile
+      - id: uv-lock
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-added-large-files
+      - id: check-case-conflict
+      - id: check-docstring-first
+      #    -   id: check-executables-have-shebangs
+      - id: check-shebang-scripts-are-executable
+      - id: detect-private-key
+      - id: forbid-submodules
+      - id: no-commit-to-branch
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.1
+    hooks:
+      # Run the linter.
+      - id: ruff
+        args: [--fix]
+      # Run the formatter.
+      - id: ruff-format
+
+  - repo: https://github.com/pyvista/pre-commit-mypy
+    rev: v0.1.0
+    hooks:
+      - id: mypy
+        pass_filenames: false
+        args: [] # Using mypy.ini for configuration
+        additional_dependencies:
+          - mypy>=1.14.1
+          - pydantic>=2.10.5
+          - pydantic-settings>=2.7.1
+          - types-requests>=2.32.0.20241016
+          - pytest>=8.3.4
+          - python-dotenv>=1.0.1

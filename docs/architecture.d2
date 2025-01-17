@@ -2,67 +2,105 @@ direction: right
 
 # Core Components
 core: {
+  # Group all models together in a grid layout
   models: Models {
     shape: package
     style.multiple: true
+    grid-columns: 3
 
+    # Base models in first column
     base: {
-      UnifiBaseModel: {
-        shape: class
+      shape: package
+      UnifiBaseModel
+      ValidationMixin
+      NetworkMixin
+      BaseResponse
+    }
+
+    # Device and wireless models in second column
+    operational: {
+      shape: package
+
+      device: {
+        Device
+        Client
+        PortStats
+        WifiStats
       }
-      ValidationMixin: {
-        shape: class
-      }
-      NetworkMixin: {
-        shape: class
-      }
-      BaseResponse: {
-        shape: class
+
+      wireless: {
+        WifiMixin
+        NetworkProfile
+        RadioSettings
+        WLANConfiguration
       }
     }
 
-    device_models: {
-      Device: {
-        shape: class
-      }
-      Client: {
-        shape: class
-      }
-      PortStats: {
-        shape: class
-      }
-      WifiStats: {
-        shape: class
-      }
-    }
+    # Configuration and status models in third column
+    config: {
+      shape: package
 
-    wireless_models: {
-      style.stroke-dash: 5
-      WifiMixin: {
-        shape: class
+      network: {
+        DHCPConfiguration
+        VLANConfiguration
+        NetworkConfiguration
       }
-      NetworkProfile: {
-        shape: class
-      }
-      RadioSettings: {
-        shape: class
+
+      system: {
+        SystemHealth
+        ProcessInfo
+        ServiceStatus
+        SystemStatus
       }
     }
   }
 
+  # API Clients
   clients: Clients {
     shape: package
     style.multiple: true
 
     BaseClient: {
       shape: class
+
+      retry: Retry Mechanism {
+        shape: class
+      }
+      errors: Error Handling {
+        shape: class
+      }
+      validation: Response Validation {
+        shape: class
+      }
     }
+
     UnifiClient: {
       shape: class
       style.stroke-dash: 5
+
+      device: Device Management {
+        shape: class
+        style.stroke-dash: 5
+      }
+      wireless: Wireless Settings {
+        shape: class
+        style.stroke-dash: 5
+      }
+      network: Network Settings {
+        shape: class
+        style.stroke-dash: 5
+      }
+      system: System Status {
+        shape: class
+        style.stroke-dash: 5
+      }
     }
+
+    # Show inheritance relationship
+    BaseClient <- UnifiClient: inherits
   }
 
+  # Recommendation Engine
   checks: Checks {
     shape: package
     style.multiple: true
@@ -75,14 +113,16 @@ core: {
   }
 }
 
-# Entry Points and Scripts
-scripts: {
-  fetch_api_responses: {
+# Development and CLI Tools
+tools: {
+  shape: package
+
+  scripts.fetch_api_responses: {
     shape: rectangle
     label: "fetch_api_responses.py\n(Development Tool)"
   }
 
-  future_cli: {
+  scripts.future_cli: {
     shape: rectangle
     style.stroke-dash: 5
     label: "CLI Tool\n(Planned)"
@@ -91,47 +131,44 @@ scripts: {
 
 # External Systems
 external: {
-  UniFi Network API: {
+  api: UniFi Network API {
     shape: cloud
   }
 
   docs: Documentation {
     api_responses: {
       shape: cylinder
-      label: "Example API\nResponses"
+      label: "API Response\nExamples"
     }
   }
 }
 
-# Data Flow
-scripts.fetch_api_responses -> core.clients.BaseClient: "1. Uses"
-core.clients.BaseClient -> external.UniFi Network API: "2. Fetches Data"
-external.UniFi Network API -> core.clients.BaseClient: "3. JSON Response"
-core.clients.BaseClient -> external.docs.api_responses: "4. Saves Examples"
-external.docs.api_responses -> core.models: "5. Used to Build\nPydantic Models"
+# Connections
+# Model usage
+core.models.base -> core.clients.BaseClient.validation: "Used for validation"
+core.models -> core.clients.UnifiClient: "Used for data"
+core.models -> core.checks.AppleRecommendationCheck: "Used for validation"
 
-# Inheritance and Usage
-core.models.base.UnifiBaseModel <- core.models.device_models.Device: Inherits
-core.models.base.ValidationMixin <- core.models.device_models.Device: Uses
-core.clients.BaseClient <- core.clients.UnifiClient: "Will Inherit"
-core.models <- core.checks.AppleRecommendationCheck: "Will Use"
+# API interactions
+core.clients.UnifiClient -> external.api: "HTTP requests"
+external.api -> core.clients.UnifiClient: "JSON responses"
 
-# Future Flow
-scripts.future_cli -> core.clients.UnifiClient: "Will Use"
-core.clients.UnifiClient -> core.checks: "Will Use"
-core.checks -> core.models: "Will Validate"
+# Development tools
+tools.scripts.fetch_api_responses -> core.clients.BaseClient: "Uses for HTTP"
+tools.scripts.fetch_api_responses -> external.api: "Fetches from"
+tools.scripts.fetch_api_responses -> external.docs.api_responses: "Saves to"
+
+# Future interactions
+tools.scripts.future_cli -> core.clients.UnifiClient: "Will use"
 
 # Legend
 legend: {
+  grid-columns: 2
   Implemented: {
     shape: package
   }
-  In Progress: {
+  "In Progress": {
     shape: package
     style.stroke-dash: 5
-  }
-  Data Flow: {
-    shape: text
-    label: "Numbers show sequence"
   }
 }

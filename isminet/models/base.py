@@ -1,19 +1,31 @@
 """Base models for the UniFi Network API."""
 
-from typing import Generic, TypeVar, List, Optional
-from pydantic import BaseModel, Field, ConfigDict, ValidationInfo, field_validator
+from typing import (
+    Generic,
+    List,
+    Optional,
+    TypeVar,
+    get_args,
+    get_origin,
+    Any,
+)
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    ValidationInfo,
+)
 from pydantic_core import PydanticCustomError
 
 T = TypeVar("T")
 
 
 class UnifiBaseModel(BaseModel):
-    """Base model with common configuration for all UniFi models."""
+    """Base model for all UniFi Network API models."""
 
     model_config = ConfigDict(
-        str_strip_whitespace=True,
-        str_min_length=1,
-        strict=True,
+        extra="ignore", str_strip_whitespace=True, validate_assignment=True
     )
 
 
@@ -67,17 +79,82 @@ class ValidationMixin(UnifiBaseModel):
         return v
 
 
-class Meta(UnifiBaseModel):
-    """Response metadata from the UniFi API."""
+class Meta(BaseModel):
+    """Meta information for UniFi Network API responses."""
 
-    rc: str = Field(description="Response code, 'ok' indicates success")
+    rc: str = Field(description="Response code")
+    msg: Optional[str] = Field(None, description="Response message")
+
+    @field_validator("rc")
+    @classmethod
+    def validate_rc(cls, v: str) -> str:
+        """Validate response code."""
+        if v != "ok":
+            raise ValueError("Response code must be 'ok'")
+        return v
 
 
 class BaseResponse(UnifiBaseModel, Generic[T]):
-    """Base response model for UniFi API endpoints."""
+    """Base response model for UniFi API responses."""
 
     meta: Meta
     data: List[T]
+
+    @field_validator("meta")
+    @classmethod
+    def validate_meta(cls, v: Meta) -> Meta:
+        """Validate meta field."""
+        if v.rc != "ok":
+            raise ValueError("Invalid response status")
+        return v
+
+    @field_validator("data")
+    @classmethod
+    def validate_data(cls, v: List[T]) -> List[T]:
+        """Validate data field."""
+        if not v:
+            raise ValueError("List should have at least 1 item")
+        return v
+
+    def __getitem__(self, index: int) -> T:
+        """Get item from data list by index."""
+        if not isinstance(self.data, list):
+            raise TypeError("Data field must be a list")
+        try:
+            return self.data[index]
+        except IndexError:
+            raise IndexError("Data index out of range")
+
+    def __getattr__(self, name: str) -> Any:
+        """Get attribute from data list."""
+        if name == "data":
+            raise AttributeError(
+                f"{type(self).__name__!r} object has no attribute {name!r}"
+            )
+        if not isinstance(self.data, list):
+            raise TypeError("Data field must be a list")
+        if not self.data:
+            raise IndexError("Data list is empty")
+        if name.startswith("data["):
+            # Parse array access
+            try:
+                index = int(name[5:-1])  # Extract index from "data[X]"
+                return self[index]
+            except (ValueError, IndexError) as e:
+                raise AttributeError(
+                    f"{type(self).__name__!r} object has no attribute {name!r}"
+                ) from e
+        return getattr(self.data[0], name)
+
+    @classmethod
+    def get_data_type(cls) -> type:
+        """Get the type of the data field."""
+        for base in cls.__orig_bases__:  # type: ignore
+            if get_origin(base) is BaseResponse:
+                args = get_args(base)
+                if args:
+                    return args[0]
+        raise TypeError("Could not determine data type for BaseResponse")
 
 
 class StatisticsMixin(UnifiBaseModel):
@@ -316,3 +393,17 @@ class VersionMixin(UnifiBaseModel):
     cfgversion: Optional[str] = Field(None, description="Configuration version")
     model_in_lts: Optional[bool] = Field(None, description="Whether model is in LTS")
     model_in_eol: Optional[bool] = Field(None, description="Whether model is EOL")
+
+
+class Site(BaseModel):
+    """Site model for UniFi Network API."""
+
+    id: str = Field(alias="_id", min_length=1)
+    name: str = Field(min_length=1)
+    desc: Optional[str] = None
+    device_count: int = Field(ge=0)
+    anonymous_id: Optional[str] = None
+    attr_no_delete: Optional[bool] = None
+    attr_hidden_id: Optional[str] = None
+    role: Optional[str] = None
+    role_hotspot: Optional[bool] = None
