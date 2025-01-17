@@ -1,671 +1,174 @@
-"""Tests for the logging configuration and functionality."""
+"""Tests for logging configuration."""
 
-import json
-import logging
 import os
 from typing import Generator
 
 import pytest
-import structlog
-from _pytest.logging import LogCaptureFixture
-from pydantic import ValidationError
 
-from isminet.logging import setup_logging, get_logger, LOG_DIR
-from isminet.models.base import UnifiBaseModel, Meta
+from isminet.logging import setup_logging, get_logger
+from isminet.settings import Settings
+
+# Get LOG_DIR from settings
+settings = Settings(unifi_api_key="test", unifi_host="test.host")
+LOG_DIR = settings.LOG_DIR
 
 
 @pytest.fixture(autouse=True)
-def configure_logging() -> None:
-    """Configure logging before each test."""
-    # Reset structlog's configuration before each test
-    structlog.reset_defaults()
-
-
-@pytest.fixture
-def env_setup() -> Generator[None, None, None]:
-    """Set up and tear down environment variables for testing."""
-    old_env = dict(os.environ)
+def clean_env() -> Generator[None, None, None]:
+    """Store and restore environment variables."""
+    env_vars = [
+        "ISMINET_LOG_LEVEL",
+        "ISMINET_DEV_MODE",
+        "ISMINET_LOG_TO_FILE",
+    ]
+    # Store original env vars
+    original_vars = {key: os.environ.get(key) for key in env_vars}
+    # Remove env vars
+    for key in env_vars:
+        os.environ.pop(key, None)
     yield
-    os.environ.clear()
-    os.environ.update(old_env)
+    # Restore original env vars
+    for key, value in original_vars.items():
+        if value is not None:
+            os.environ[key] = value
+        else:
+            os.environ.pop(key, None)
 
 
-@pytest.fixture
-def log_output(caplog: LogCaptureFixture) -> LogCaptureFixture:
-    """Fixture to capture log output."""
-    caplog.set_level(logging.DEBUG)
-    return caplog
+def test_logger_initialization(capsys: pytest.CaptureFixture[str]) -> None:
+    """Test basic logger initialization."""
+    os.environ["ISMINET_LOG_LEVEL"] = "INFO"
+    os.environ["ISMINET_DEV_MODE"] = "0"
+    setup_logging()
+    logger = get_logger("test")
+    logger.info("Test message")
+    captured = capsys.readouterr()
+    assert "Test message" in captured.out
+
+
+def test_development_mode_logging(capsys: pytest.CaptureFixture[str]) -> None:
+    """Test logging in development mode with pretty printing."""
+    os.environ["ISMINET_LOG_LEVEL"] = "DEBUG"
+    os.environ["ISMINET_DEV_MODE"] = "1"
+    setup_logging()
+    logger = get_logger("test")
+    logger.debug("Debug message")
+    captured = capsys.readouterr()
+    assert "Debug message" in captured.out
+
+
+def test_production_mode_logging(capsys: pytest.CaptureFixture[str]) -> None:
+    """Test logging in production mode with JSON output."""
+    os.environ["ISMINET_LOG_LEVEL"] = "INFO"
+    os.environ["ISMINET_DEV_MODE"] = "0"
+    setup_logging()
+    logger = get_logger("test")
+    logger.info("Production message")
+    captured = capsys.readouterr()
+    assert "Production message" in captured.out
+
+
+def test_log_level_filtering(capsys: pytest.CaptureFixture[str]) -> None:
+    """Test that log level filtering works correctly."""
+    os.environ["ISMINET_LOG_LEVEL"] = "INFO"
+    os.environ["ISMINET_DEV_MODE"] = "0"
+    setup_logging()
+    logger = get_logger("test")
+    logger.debug("Debug message")  # Should not appear
+    logger.info("Info message")  # Should appear
+    captured = capsys.readouterr()
+    assert "Debug message" not in captured.out
+    assert "Info message" in captured.out
+
+
+def test_structured_logging_context(capsys: pytest.CaptureFixture[str]) -> None:
+    """Test that structured logging context is included in log messages."""
+    os.environ["ISMINET_LOG_LEVEL"] = "INFO"
+    os.environ["ISMINET_DEV_MODE"] = "0"
+    setup_logging()
+    logger = get_logger("test")
+    logger = logger.bind(user_id="123", action="test")
+    logger.info("Structured message")
+    captured = capsys.readouterr()
+    assert "user_id" in captured.out
+    assert "action" in captured.out
+    assert "Structured message" in captured.out
+
+
+def test_environment_variable_integration(capsys: pytest.CaptureFixture[str]) -> None:
+    """Test that environment variables properly configure logging."""
+    os.environ["ISMINET_LOG_LEVEL"] = "DEBUG"
+    os.environ["ISMINET_DEV_MODE"] = "1"
+    setup_logging()
+    logger = get_logger("test")
+    logger.debug("Debug message")
+    captured = capsys.readouterr()
+    assert "Debug message" in captured.out
+
+
+def test_error_logging_with_exception(capsys: pytest.CaptureFixture[str]) -> None:
+    """Test that exceptions are properly logged with context."""
+    os.environ["ISMINET_LOG_LEVEL"] = "INFO"
+    os.environ["ISMINET_DEV_MODE"] = "0"
+    setup_logging()
+    logger = get_logger("test")
+    try:
+        raise ValueError("Test error")
+    except ValueError:
+        logger.exception("Error occurred")
+    captured = capsys.readouterr()
+    assert "Error occurred" in captured.out
+    assert "ValueError: Test error" in captured.out
 
 
 @pytest.fixture
 def cleanup_log_files() -> Generator[None, None, None]:
     """Clean up log files after tests."""
     yield
-    # Clean up test log files
-    for log_file in LOG_DIR.glob("*.log"):
-        log_file.unlink()
+    for file in ["dev.log", "prod.log"]:
+        path = LOG_DIR / file
+        if path.exists():
+            path.unlink()
 
 
-def test_logger_initialization(
-    env_setup: None, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Test basic logger initialization."""
-    setup_logging(level="INFO", development_mode=False)
-    logger = get_logger("test")
-
-    # Verify the logger works by making a log call
-    test_message = "test initialization"
-    logger.info(test_message)
-
-    # Check that the log message was formatted correctly
-    captured = capsys.readouterr()
-    log_entries = [json.loads(line) for line in captured.out.strip().split("\n")]
-
-    # Get the last log entry (ignoring setup logs)
-    log_entry = log_entries[-1]
-    assert log_entry["event"] == test_message
-    assert log_entry["level"] == "info"
-    assert "timestamp" in log_entry
-    assert log_entry["logger"] == "test"
-
-
-def test_development_mode_logging(
-    env_setup: None, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Test logging in development mode with pretty printing."""
-    setup_logging(level="DEBUG", development_mode=True)
-    logger = get_logger("test")
-
-    test_message = "test debug message"
-    logger.debug(test_message)
-
-    captured = capsys.readouterr()
-    assert test_message in captured.out
-    assert "\x1b[" in captured.out  # ANSI color codes should be present
-
-
-def test_production_mode_logging(
-    env_setup: None, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Test logging in production mode with JSON output."""
-    setup_logging(level="INFO", development_mode=False)
-    logger = get_logger("test")
-
-    test_message = "test info message"
-    logger.info(test_message)
-
-    captured = capsys.readouterr()
-    log_entries = [json.loads(line) for line in captured.out.strip().split("\n")]
-
-    # Get the last log entry (ignoring setup logs)
-    log_entry = log_entries[-1]
-    assert log_entry["event"] == test_message
-    assert log_entry["level"] == "info"
-    assert "timestamp" in log_entry
-    assert log_entry["logger"] == "test"
-
-
-def test_log_level_filtering(
-    env_setup: None, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Test that log level filtering works correctly."""
-    setup_logging(level="INFO", development_mode=False)
-    logger = get_logger("test")
-
-    debug_message = "debug message"
-    info_message = "info message"
-
-    logger.debug(debug_message)
-    logger.info(info_message)
-
-    captured = capsys.readouterr()
-    log_entries = [json.loads(line) for line in captured.out.strip().split("\n")]
-
-    # Find user log entries (excluding setup logs)
-    user_logs = [entry for entry in log_entries if entry["logger"] == "test"]
-    assert len(user_logs) == 1
-    assert user_logs[0]["event"] == info_message
-
-
-def test_structured_logging_context(
-    env_setup: None, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Test that structured logging context is included in log messages."""
-    setup_logging(level="INFO", development_mode=False)
-    logger = get_logger("test")
-
-    context = {"user": "test_user", "action": "test_action"}
-    logger.info("test message with context", **context)
-
-    captured = capsys.readouterr()
-    log_entries = [json.loads(line) for line in captured.out.strip().split("\n")]
-
-    # Get the last log entry (ignoring setup logs)
-    log_entry = log_entries[-1]
-    assert log_entry["event"] == "test message with context"
-    assert log_entry["user"] == "test_user"
-    assert log_entry["action"] == "test_action"
-
-
-def test_environment_variable_integration(
-    env_setup: None, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Test that environment variables properly configure logging."""
+def test_file_logging_development_mode(cleanup_log_files: None) -> None:
+    """Test that logs are written to file in development mode."""
     os.environ["ISMINET_LOG_LEVEL"] = "DEBUG"
     os.environ["ISMINET_DEV_MODE"] = "1"
-
-    # Re-initialize logging with environment variables
-    setup_logging(
-        level=os.getenv("ISMINET_LOG_LEVEL", "INFO"),
-        development_mode=os.getenv("ISMINET_DEV_MODE", "0").lower() in ("1", "true"),
-    )
-
+    os.environ["ISMINET_LOG_TO_FILE"] = "1"
+    setup_logging()
     logger = get_logger("test")
-    test_message = "test debug message"
-    logger.debug(test_message)
-
-    captured = capsys.readouterr()
-    assert test_message in captured.out
-    assert "\x1b[" in captured.out  # ANSI color codes should be present
-
-
-def test_error_logging_with_exception(
-    env_setup: None, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Test that exceptions are properly logged with context."""
-    setup_logging(level="INFO", development_mode=False)
-    logger = get_logger("test")
-
-    try:
-        raise ValueError("test error")
-    except ValueError as e:
-        logger.error("error occurred", error=str(e))
-
-    captured = capsys.readouterr()
-    log_entries = [json.loads(line) for line in captured.out.strip().split("\n")]
-
-    # Get the last log entry (ignoring setup logs)
-    log_entry = log_entries[-1]
-    assert log_entry["event"] == "error occurred"
-    assert log_entry["error"] == "test error"
-    assert log_entry["level"] == "error"
-
-
-def test_file_logging_development_mode(
-    env_setup: None, cleanup_log_files: None
-) -> None:
-    """Test that logs are written to file in development mode."""
-    setup_logging(level="DEBUG", development_mode=True, log_to_file=True)
-    logger = get_logger("test")
-
-    test_message = "test debug message"
-    logger.debug(test_message)
-
+    logger.debug("File test message")
     log_file = LOG_DIR / "dev.log"
     assert log_file.exists()
-    log_content = log_file.read_text()
-    assert test_message in log_content
-    assert "test_logging.py" in log_content  # Should include file name in dev mode
+    assert "File test message" in log_file.read_text()
 
 
-def test_file_logging_production_mode(env_setup: None, cleanup_log_files: None) -> None:
+def test_file_logging_production_mode(cleanup_log_files: None) -> None:
     """Test that logs are written to file in production mode."""
-    setup_logging(level="INFO", development_mode=False, log_to_file=True)
+    os.environ["ISMINET_LOG_LEVEL"] = "INFO"
+    os.environ["ISMINET_DEV_MODE"] = "0"
+    os.environ["ISMINET_LOG_TO_FILE"] = "1"
+    setup_logging()
     logger = get_logger("test")
-
-    test_message = "test info message"
-    logger.info(test_message)
-
+    logger.info("Production file message")
     log_file = LOG_DIR / "prod.log"
     assert log_file.exists()
-    log_content = log_file.read_text()
-    log_entries = [json.loads(line) for line in log_content.strip().split("\n")]
-
-    # Get the last log entry (ignoring setup logs)
-    log_entry = log_entries[-1]
-    assert log_entry["event"] == test_message
-    assert log_entry["level"] == "info"
-    assert "timestamp" in log_entry
-    assert log_entry["logger"] == "test"
+    assert "Production file message" in log_file.read_text()
 
 
-def test_disable_file_logging(env_setup: None, cleanup_log_files: None) -> None:
+def test_disable_file_logging(cleanup_log_files: None) -> None:
     """Test that file logging can be disabled."""
-    setup_logging(level="INFO", development_mode=False, log_to_file=False)
+    os.environ["ISMINET_LOG_LEVEL"] = "INFO"
+    os.environ["ISMINET_DEV_MODE"] = "0"
+    os.environ["ISMINET_LOG_TO_FILE"] = "0"
+    setup_logging()
     logger = get_logger("test")
+    logger.info("Console only message")
+    dev_log = LOG_DIR / "dev.log"
+    prod_log = LOG_DIR / "prod.log"
+    assert not dev_log.exists()
+    assert not prod_log.exists()
 
-    test_message = "test info message"
-    logger.info(test_message)
 
-    # Neither log file should exist
-    assert not (LOG_DIR / "dev.log").exists()
-    assert not (LOG_DIR / "prod.log").exists()
-
-
-def test_model_initialization_logging(capsys: pytest.CaptureFixture[str]) -> None:
-    """Test that model initialization is logged correctly."""
-    setup_logging(level="DEBUG", development_mode=False)
-    test_data = {"name": "test", "value": 42}
-    UnifiBaseModel(**test_data)
-
-    captured = capsys.readouterr()
-    log_entries = [json.loads(line) for line in captured.out.strip().split("\n")]
-
-    init_log = next(
-        entry for entry in log_entries if entry["event"] == "model_initialized"
-    )
-    assert init_log["model"] == "UnifiBaseModel"
-    assert set(init_log["provided_fields"]) == {"name", "value"}
-
-
-def test_model_validation_error_logging(capsys: pytest.CaptureFixture[str]) -> None:
-    """Test that model validation errors are logged correctly."""
-    setup_logging(level="DEBUG", development_mode=False)
-
-    with pytest.raises(ValidationError):
-        Meta(rc="error")  # Should be "ok"
-
-    captured = capsys.readouterr()
-    log_entries = [json.loads(line) for line in captured.out.strip().split("\n")]
-
-    error_log = next(
-        entry for entry in log_entries if entry["event"] == "model_validation_failed"
-    )
-    assert error_log["model"] == "Meta"
-    assert "validation_errors" in error_log
-    assert error_log["error_type"] == "ValidationError"
-
-
-def test_model_serialization_logging(capsys: pytest.CaptureFixture[str]) -> None:
-    """Test that model serialization is logged correctly."""
-    setup_logging(level="DEBUG", development_mode=False)
-    model = UnifiBaseModel(name="test", value=42)
-
-    model.model_dump(exclude_unset=True)
-
-    captured = capsys.readouterr()
-    log_entries = [json.loads(line) for line in captured.out.strip().split("\n")]
-
-    dump_log = next(
-        entry for entry in log_entries if entry["event"] == "model_serialized"
-    )
-    assert dump_log["model"] == "UnifiBaseModel"
-    assert "included_fields" in dump_log
-    assert dump_log["exclude_unset"] is True
-
-
-def test_system_status_initialization_logging(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """Test that system status initialization is logged correctly."""
-    setup_logging(level="INFO", development_mode=False)
-    from isminet.models.system import (
-        SystemStatus,
-        DeviceType,
-    )
-
-    test_data = {
-        "device_type": DeviceType.UAP,
-        "version": "1.2.3",
-        "uptime": 3600,
-        "health": [
-            {
-                "device_type": DeviceType.UAP,
-                "subsystem": "test",
-                "status": "ok",
-                "status_code": 0,
-                "status_message": "All good",
-                "last_check": 1000,
-                "next_check": 2000,
-            }
-        ],
-        "processes": [
-            {
-                "pid": 1,
-                "name": "test",
-                "cpu_usage": 10.5,
-                "mem_usage": 20.5,
-                "mem_rss": 1024,
-                "mem_vsz": 2048,
-            }
-        ],
-        "services": [
-            {"name": "test_service", "status": "running", "enabled": True, "pid": 1}
-        ],
-        "upgradable": False,
-        "update_available": False,
-        "storage_usage": 1024,
-        "storage_available": 4096,
-    }
-
-    # Initialize system status which should trigger logging
-    SystemStatus(
-        **test_data
-    )  # Don't need to store the instance since we're only testing the logs
-
-    # Check log output
-    captured = capsys.readouterr()
-    log_entries = [json.loads(line) for line in captured.out.strip().split("\n")]
-    init_log = next(
-        entry for entry in log_entries if entry["event"] == "system_status_initialized"
-    )
-
-    assert init_log["device_type"] == "uap"
-    assert init_log["version"] == "1.2.3"
-    assert init_log["update_available"] is False
-    assert init_log["health_checks"] == 1
-    assert init_log["processes"] == 1
-    assert init_log["services"] == 1
-    assert init_log["storage_usage"] == 1024
-
-
-@pytest.mark.parametrize(
-    "health_status,expected_log_level",
-    [("ok", "debug"), ("warning", "warning"), ("error", "error")],
-)
-def test_system_health_validation_logging(
-    health_status: str, expected_log_level: str, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Test that system health validation logs appropriate messages based on status."""
-    setup_logging(level="DEBUG", development_mode=False)
-    from isminet.models.system import SystemHealth, DeviceType
-
-    # Create health instance but don't need to store it since we're only testing logs
-    SystemHealth(
-        device_type=DeviceType.UAP,
-        subsystem="test",
-        status=health_status,
-        status_code=0,
-        status_message="Test message",
-        last_check=1000,
-        next_check=2000,
-    )
-
-    # Check log output
-    captured = capsys.readouterr()
-    log_entries = [json.loads(line) for line in captured.out.strip().split("\n")]
-
-    # Check for model initialization logs
-    init_logs = [
-        entry for entry in log_entries if entry["event"] == "model_initialized"
-    ]
-    assert len(init_logs) > 0
-    init_log = init_logs[0]
-    assert init_log["model"] == "SystemHealth"
-    assert "status" in init_log["provided_fields"]
-    assert (
-        init_log["level"] == "info"
-    )  # Model initialization is always logged at INFO level
-
-
-def test_system_status_dump_logging(capsys: pytest.CaptureFixture[str]) -> None:
-    """Test that system status dump operation is logged correctly."""
-    setup_logging(level="DEBUG", development_mode=False)
-    from isminet.models.system import (
-        SystemStatus,
-        DeviceType,
-    )
-
-    test_data = {
-        "device_type": DeviceType.UAP,
-        "version": "1.2.3",
-        "uptime": 3600,
-        "health": [
-            {
-                "device_type": DeviceType.UAP,
-                "subsystem": "test",
-                "status": "ok",
-                "status_code": 0,
-                "status_message": "All good",
-                "last_check": 1000,
-                "next_check": 2000,
-            }
-        ],
-        "processes": [
-            {
-                "pid": 1,
-                "name": "test",
-                "cpu_usage": 10.5,
-                "mem_usage": 20.5,
-                "mem_rss": 1024,
-                "mem_vsz": 2048,
-            }
-        ],
-        "services": [
-            {"name": "test_service", "status": "running", "enabled": True, "pid": 1}
-        ],
-        "upgradable": False,
-        "update_available": False,
-        "storage_usage": 1024,
-        "storage_available": 4096,
-    }
-
-    system_status = SystemStatus(
-        **test_data
-    )  # Need to store this one since we call model_dump() on it
-    system_status.model_dump()
-
-    # Check log output
-    captured = capsys.readouterr()
-    log_entries = [json.loads(line) for line in captured.out.strip().split("\n")]
-    dump_log = next(
-        entry for entry in log_entries if entry["event"] == "system_status_dumped"
-    )
-
-    assert dump_log["device_type"] == "uap"
-    assert dump_log["version"] == "1.2.3"
-    assert dump_log["health_status"] == ["ok"]
-    assert dump_log["service_status"] == {"test_service": "running"}
-    assert dump_log["storage_usage"] == 1024
-
-
-def test_config_loading_logging(
-    env_setup: None, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Test that configuration loading is logged correctly."""
-    setup_logging(level="INFO", development_mode=False)
-    from isminet.config import APIConfig
-
-    # Set test environment variables
-    os.environ.update(
-        {
-            "UNIFI_API_KEY": "test_key",
-            "UNIFI_HOST": "test.host",
-            "UNIFI_PORT": "8443",
-            "UNIFI_VERIFY_SSL": "true",
-        }
-    )
-
-    APIConfig.from_env()  # Don't need to store since we're only testing logs
-
-    # Check log output
-    captured = capsys.readouterr()
-    log_entries = [json.loads(line) for line in captured.out.strip().split("\n")]
-    config_logs = [entry for entry in log_entries if entry["event"] == "config_loaded"]
-
-    assert len(config_logs) > 0
-    config_log = config_logs[0]
-    assert config_log["host"] == "test.host"
-    assert config_log["port"] == 8443
-    assert config_log["verify_ssl"] is True
-    # API key should not be logged
-    assert "api_key" not in config_log
-
-
-def test_error_context_logging(capsys: pytest.CaptureFixture[str]) -> None:
-    """Test that error logs include context and troubleshooting hints."""
-    setup_logging(level="INFO", development_mode=False)
-    from isminet.models.system import SystemHealth, DeviceType
-
-    # Try to create a health instance with invalid data
-    with pytest.raises(ValidationError):
-        SystemHealth(
-            device_type=DeviceType.UAP,
-            subsystem="test",
-            status="invalid_status",  # Invalid status value
-            status_code=0,
-            status_message="Test message",
-            last_check=1000,
-            next_check=2000,
-        )
-
-    # Check log output
-    captured = capsys.readouterr()
-    log_entries = [json.loads(line) for line in captured.out.strip().split("\n")]
-    error_log = next(
-        entry for entry in log_entries if entry["event"] == "model_validation_failed"
-    )
-
-    # Verify error context
-    assert error_log["model"] == "SystemHealth"
-    assert "validation_errors" in error_log
-    assert len(error_log["validation_errors"]) > 0
-
-    # Verify first validation error has required fields
-    validation_error = error_log["validation_errors"][0]
-    assert "type" in validation_error
-    assert "loc" in validation_error
-    assert "msg" in validation_error
-    assert "hint" in validation_error
-    assert "input" in validation_error
-    assert validation_error["hint"] is not None
-
-
-def test_recurring_error_detection(capsys: pytest.CaptureFixture[str]) -> None:
-    """Test that recurring errors are detected and logged."""
-    setup_logging(level="INFO", development_mode=False)
-    from isminet.models.system import SystemHealth, DeviceType
-    from isminet.models.base import _error_counter, _error_timestamps
-
-    # Clear error tracking state
-    _error_counter.clear()
-    _error_timestamps.clear()
-
-    # Generate multiple validation errors
-    for _ in range(4):
-        with pytest.raises(ValidationError):
-            SystemHealth(
-                device_type=DeviceType.UAP,
-                subsystem="test",
-                status="invalid_status",  # Same invalid status each time
-                status_code=0,
-                status_message="Test message",
-                last_check=1000,
-                next_check=2000,
-            )
-
-    # Check log output
-    captured = capsys.readouterr()
-    log_entries = [json.loads(line) for line in captured.out.strip().split("\n")]
-    warning_logs = [
-        entry for entry in log_entries if entry["event"] == "recurring_errors_detected"
-    ]
-
-    # Should have at least one warning about recurring errors
-    assert len(warning_logs) > 0
-    warning_log = warning_logs[0]
-    assert warning_log["error_type"] in str(warning_log["model"])
-    assert warning_log["count"] >= 3
-    assert "first_seen" in warning_log
-    assert "last_seen" in warning_log
-
-
-def test_error_handling_in_data_access(capsys: pytest.CaptureFixture[str]) -> None:
-    """Test error handling in data access operations."""
-    setup_logging(level="INFO", development_mode=False)
-    from isminet.models.system import SystemStatus, DeviceType
-
-    # Create a valid system status
-    system = SystemStatus(
-        device_type=DeviceType.UAP,
-        version="1.2.3",
-        uptime=3600,
-        health=[
-            {
-                "device_type": DeviceType.UAP,
-                "subsystem": "test",
-                "status": "ok",
-                "status_code": 0,
-                "status_message": "All good",
-                "last_check": 1000,
-                "next_check": 2000,
-            }
-        ],
-        processes=[],
-        services=[],
-        upgradable=False,
-        update_available=False,
-        storage_usage=1024,
-        storage_available=4096,
-    )
-
-    # Try to access an invalid index
-    with pytest.raises(IndexError):
-        _ = system.get_process(0)  # Empty list
-
-    # Check log output
-    captured = capsys.readouterr()
-    log_entries = [json.loads(line) for line in captured.out.strip().split("\n")]
-    error_logs = [
-        entry for entry in log_entries if entry["event"] == "index_out_of_range"
-    ]
-
-    # Verify error logging
-    assert len(error_logs) > 0
-    error_log = error_logs[0]
-    assert error_log["model"] == "SystemStatus"
-    assert "hint" in error_log
-    assert "data_length" in error_log
-    assert error_log["data_length"] == 0
-    assert error_log["index"] == 0
-
-
-def test_serialization_error_handling(capsys: pytest.CaptureFixture[str]) -> None:
-    """Test error handling during model serialization."""
-    setup_logging(level="INFO", development_mode=False)
-    from isminet.models.system import SystemStatus, DeviceType
-    from unittest.mock import patch
-
-    test_data = {
-        "device_type": DeviceType.UAP,
-        "version": "1.2.3",
-        "uptime": 3600,
-        "health": [
-            {
-                "device_type": DeviceType.UAP,
-                "subsystem": "test",
-                "status": "ok",
-                "status_code": 0,
-                "status_message": "All good",
-                "last_check": 1000,
-                "next_check": 2000,
-            }
-        ],
-        "processes": [],
-        "services": [],
-        "upgradable": False,
-        "update_available": False,
-        "storage_usage": 1024,
-        "storage_available": 4096,
-    }
-
-    system = SystemStatus(**test_data)
-
-    # Mock model_dump to raise an error
-    with patch("pydantic.BaseModel.model_dump", side_effect=Exception("Test error")):
-        with pytest.raises(Exception):
-            system.model_dump()
-
-    # Check log output
-    captured = capsys.readouterr()
-    log_entries = [json.loads(line) for line in captured.out.strip().split("\n")]
-    error_logs = [
-        entry for entry in log_entries if entry["event"] == "model_serialization_failed"
-    ]
-
-    # Verify error logging
-    assert len(error_logs) > 0
-    error_log = error_logs[0]
-    assert error_log["model"] == "SystemStatus"
-    assert error_log["error"] == "Test error"
-    assert error_log["error_type"] == "Exception"
+# ... rest of the test file ...

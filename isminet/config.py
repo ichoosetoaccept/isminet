@@ -1,75 +1,40 @@
 """Configuration management for the isminet package."""
 
-from enum import Enum
-from typing import Any, Optional
+from typing import Any
 from urllib.parse import urljoin
 
-from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from .settings import settings
 
 
-class APIVersion(str, Enum):
-    """UniFi Network API versions."""
+class APIConfig:
+    """UniFi Network API configuration.
 
-    V1 = "v1"
-    V2 = "v2"
+    This class is now a wrapper around the central settings,
+    maintaining compatibility with existing code while using
+    the centralized configuration.
+    """
 
-    @property
-    def path(self) -> str:
-        """Get API path for version."""
-        return "/proxy/network/api"
+    def __init__(self, **kwargs: Any) -> None:
+        """Initialize API configuration from settings or kwargs."""
+        # Allow overriding settings with kwargs
+        self.api_key = kwargs.get("api_key", settings.unifi_api_key)
+        self.host = kwargs.get("host", settings.unifi_host)
+        self.port = kwargs.get("port", settings.unifi_port)
+        self.verify_ssl = kwargs.get("verify_ssl", settings.unifi_verify_ssl)
+        self.timeout = kwargs.get("timeout", settings.unifi_timeout)
+        self.site = kwargs.get("site", settings.unifi_site)
+        self.api_version = kwargs.get("api_version", settings.unifi_api_version)
 
-
-class APIConfig(BaseSettings):
-    """UniFi Network API configuration."""
-
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        env_prefix="UNIFI_",
-        case_sensitive=False,
-    )
-
-    # Required settings
-    api_key: str = Field(description="UniFi Network API key")
-    host: str = Field(description="UniFi Network controller hostname/IP")
-
-    # Optional settings with defaults
-    port: Optional[int] = Field(
-        default=None, description="UniFi Network controller port"
-    )
-    verify_ssl: bool = Field(
-        default=False, description="Whether to verify SSL certificates"
-    )
-    timeout: int = Field(default=10, description="API request timeout in seconds")
-    site: str = Field(default="default", description="UniFi Network site name")
-    api_version: APIVersion = Field(
-        default=APIVersion.V1, description="UniFi Network API version"
-    )
-
-    @field_validator("host")
-    @classmethod
-    def validate_host(cls, v: str) -> str:
-        """Validate host is not empty."""
-        if not v:
-            raise ValueError("Host cannot be empty")
-        return v
-
-    @field_validator("api_key")
-    @classmethod
-    def validate_api_key(cls, v: str) -> str:
-        """Validate API key is not empty."""
-        if not v:
+        # Validate required fields
+        if not self.api_key:
             raise ValueError("API key cannot be empty")
-        return v
-
-    @field_validator("port")
-    @classmethod
-    def validate_port(cls, v: Optional[int]) -> Optional[int]:
-        """Validate port is in valid range."""
-        if v is not None and (v < 1 or v > 65535):
-            raise ValueError("Port must be between 1 and 65535")
-        return v
+        if not self.host:
+            raise ValueError("Host cannot be empty")
+        if self.port is not None:
+            if not isinstance(self.port, int):
+                raise ValueError("Port must be an integer")
+            if self.port < 1 or self.port > 65535:
+                raise ValueError("Port must be between 1 and 65535")
 
     @property
     def base_url(self) -> str:
@@ -95,7 +60,7 @@ class APIConfig(BaseSettings):
     @classmethod
     def from_env(cls, **kwargs: Any) -> "APIConfig":
         """Create config from environment variables."""
-        from isminet.logging import get_logger
+        from .logging import get_logger
 
         logger = get_logger(__name__)
         config = cls(**kwargs)

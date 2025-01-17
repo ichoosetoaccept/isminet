@@ -2,7 +2,6 @@
 
 from typing import List, Optional, Any, Dict
 from pydantic import Field, field_validator, model_validator
-from pydantic_core import PydanticCustomError
 
 from .base import UnifiBaseModel
 from .enums import DeviceType
@@ -85,9 +84,26 @@ class SystemStatus(UnifiBaseModel):
     services: List[ServiceStatus] = Field(description="Service status")
     upgradable: bool = Field(description="Whether device is upgradable")
     update_available: bool = Field(description="Whether update is available")
+    update_version: Optional[str] = Field(None, description="Available update version")
     storage_usage: int = Field(description="Storage usage in bytes", ge=0)
     storage_available: int = Field(description="Available storage in bytes", ge=0)
     alerts: Optional[List[str]] = Field(None, description="System alerts")
+
+    @field_validator("version", "update_version")
+    @classmethod
+    def validate_version(cls, v: Optional[str]) -> Optional[str]:
+        """Validate version format."""
+        if v is not None and not VERSION_PATTERN.match(v):
+            raise ValueError("Version must be in format x.y.z")
+        return v
+
+    @field_validator("storage_usage")
+    @classmethod
+    def validate_storage_usage(cls, v: int) -> int:
+        """Validate storage usage percentage."""
+        if v < 0 or v > 100:
+            raise ValueError("Input should be less than or equal to 100")
+        return v
 
     def __init__(self, **data: Any) -> None:
         """Initialize the system status and log initialization details."""
@@ -98,31 +114,11 @@ class SystemStatus(UnifiBaseModel):
             version=self.version,
             update_available=self.update_available,
             health_checks=len(self.health),
-            processes=len(self.processes),
-            services=len(self.services),
+            processes=len(self.processes or []),
+            services=len(self.services or []),
             alerts=self.alerts,
             storage_usage=self.storage_usage,
         )
-
-    @field_validator("version")
-    @classmethod
-    def validate_version(cls, v: str) -> str:
-        """Validate version fields."""
-        try:
-            if not VERSION_PATTERN.match(v):
-                raise PydanticCustomError(
-                    "invalid_version_format",
-                    "Version must be in format x.y.z",
-                    {},
-                )
-            return v
-        except Exception:
-            logger.error(
-                event="system_version_validation_failed",
-                version=v,
-                error="invalid_version_format",
-            )
-            raise
 
     @field_validator("health")
     @classmethod

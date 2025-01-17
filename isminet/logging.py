@@ -8,50 +8,54 @@ from typing import Any, Callable, List, MutableMapping
 import structlog
 from rich.console import Console
 
+from .settings import Settings
+
 console = Console()
 
-# Get the project root directory
-PROJECT_ROOT = Path(__file__).parent.parent
-LOG_DIR = PROJECT_ROOT / "logs"
 
-# Ensure log directory exists
-LOG_DIR.mkdir(exist_ok=True)
-
-
-def get_log_file_path(development_mode: bool) -> str:
-    """Get the appropriate log file path based on mode."""
-    return str(LOG_DIR / ("dev.log" if development_mode else "prod.log"))
-
-
-def setup_logging(
-    level: str = "INFO",
-    development_mode: bool = False,
-    log_to_file: bool = True,
-) -> None:
+def setup_logging() -> None:
     """Configure structured logging for the application.
 
-    Args:
-        level: The logging level to use (default: INFO)
-        development_mode: Whether to use pretty printing for development (default: False)
-        log_to_file: Whether to log to a file in addition to stdout (default: True)
+    Uses settings from the central configuration:
+    - settings.log_level: The logging level to use
+    - settings.development_mode: Whether to use pretty printing
+    - settings.log_to_file: Whether to log to file
     """
+    # Reload settings to pick up environment variable changes
+    settings = Settings()
+
     # Convert string level to logging level
-    log_level = getattr(logging, level.upper())
+    log_level = getattr(logging, settings.log_level.upper())
 
     # Create handlers
-    handlers: List[logging.Handler] = [logging.StreamHandler(sys.stdout)]
-    if log_to_file:
-        log_file = get_log_file_path(development_mode)
+    handlers: List[logging.Handler] = []
+
+    # Configure console handler
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(log_level)
+    handlers.append(console_handler)
+
+    # Configure file handler if enabled
+    if settings.log_to_file:
+        log_file = settings.get_log_file_path()
+        # Create logs directory if it doesn't exist
+        log_dir = Path(log_file).parent
+        log_dir.mkdir(parents=True, exist_ok=True)
         file_handler = logging.FileHandler(log_file)
+        file_handler.setLevel(log_level)
         handlers.append(file_handler)
 
     # Set up standard logging
-    logging.basicConfig(
-        format="%(message)s",
-        handlers=handlers,
-        level=log_level,
-        force=True,  # Reset any existing configuration
-    )
+    root_logger = logging.getLogger()
+    root_logger.setLevel(log_level)
+
+    # Remove any existing handlers
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+
+    # Add our handlers
+    for handler in handlers:
+        root_logger.addHandler(handler)
 
     # Configure processors for structlog
     shared_processors: list[Callable[[Any, str, MutableMapping[str, Any]], Any]] = [
@@ -64,7 +68,7 @@ def setup_logging(
         structlog.contextvars.merge_contextvars,
     ]
 
-    if development_mode:
+    if settings.development_mode:
         # Use a more readable format for development
         processors = shared_processors + [
             # Add colors and format for better readability
@@ -102,10 +106,10 @@ def setup_logging(
     logger = get_logger(__name__)
     logger.info(
         "logging_configured",
-        level=level,
-        development_mode=development_mode,
-        log_to_file=log_to_file,
-        log_file=get_log_file_path(development_mode) if log_to_file else None,
+        level=settings.log_level,
+        development_mode=settings.development_mode,
+        log_to_file=settings.log_to_file,
+        log_file=settings.get_log_file_path() if settings.log_to_file else None,
     )
 
 
