@@ -10,6 +10,7 @@ from pydantic import ValidationError
 
 from ..config import APIConfig
 from ..models.base import UnifiBaseModel
+from ..logging import get_logger
 
 T = TypeVar("T", bound=UnifiBaseModel)
 P = ParamSpec("P")
@@ -51,6 +52,14 @@ class BaseAPIClient:
         self.config = config
         self._session: Optional[Session] = None
         self._is_closed = False
+        self.logger = get_logger(__name__)
+
+        self.logger.info(
+            "initializing_client",
+            base_url=self.config.api_url,
+            verify_ssl=self.config.verify_ssl,
+            timeout=self.config.timeout,
+        )
 
     @property
     def session(self) -> Session:
@@ -61,6 +70,7 @@ class BaseAPIClient:
             self._session = Session()
             self._session.verify = self.config.verify_ssl
             self._session.headers.update(self.config.get_headers())
+            self.logger.debug("created_new_session")
         return self._session
 
     def close(self) -> None:
@@ -68,6 +78,7 @@ class BaseAPIClient:
         if self._session is not None:
             self._session.close()
             self._session = None
+            self.logger.debug("closed_session")
         self._is_closed = True
 
     def __enter__(self) -> "BaseAPIClient":
@@ -129,9 +140,20 @@ class BaseAPIClient:
         url = urljoin(self.config.api_url, path)
         retries = 3
         delay = 1.0
+        attempt = 1
+
+        log_context = {
+            "method": method,
+            "path": path,
+            "params": params,
+            "response_model": response_model.__name__ if response_model else None,
+        }
+
+        self.logger.debug("sending_request", attempt=attempt, **log_context)
 
         while True:
             try:
+                start_time = time.time()
                 response = self.session.request(
                     method,
                     url,
@@ -139,11 +161,32 @@ class BaseAPIClient:
                     json=json,
                     timeout=self.config.timeout,
                 )
+                duration = time.time() - start_time
+
+                self.logger.debug(
+                    "received_response",
+                    status_code=response.status_code,
+                    duration=f"{duration:.3f}s",
+                    **log_context,
+                )
                 break
             except ConnectionError:
                 if retries <= 0:
+                    self.logger.error(
+                        "max_retries_exceeded",
+                        retries=3,
+                        **log_context,
+                    )
                     raise
                 retries -= 1
+                attempt += 1
+                self.logger.warning(
+                    "retrying_request",
+                    attempt=attempt,
+                    delay=f"{delay:.1f}s",
+                    remaining_retries=retries,
+                    **log_context,
+                )
                 time.sleep(delay)
                 delay *= 2
 
@@ -155,9 +198,26 @@ class BaseAPIClient:
         if response_model is not None:
             try:
                 if isinstance(data.get("data"), list):
-                    return [response_model(**item) for item in data["data"]]
-                return response_model(**data["data"])
+                    items = [response_model(**item) for item in data["data"]]
+                    self.logger.debug(
+                        "parsed_response",
+                        items_count=len(items),
+                        model=response_model.__name__,
+                    )
+                    return items
+
+                item = response_model(**data["data"])
+                self.logger.debug(
+                    "parsed_response",
+                    model=response_model.__name__,
+                )
+                return item
             except ValidationError as e:
+                self.logger.error(
+                    "validation_error",
+                    error=str(e),
+                    model=response_model.__name__,
+                )
                 raise ResponseValidationError("Response validation failed", e)
 
         return data
@@ -171,6 +231,12 @@ class BaseAPIClient:
                 error_msg = error_data["meta"]["msg"]
         except Exception:
             pass
+
+        self.logger.error(
+            "request_failed",
+            status_code=response.status_code,
+            error=error_msg,
+        )
 
         if response.status_code == 401:
             raise AuthenticationError(error_msg)
