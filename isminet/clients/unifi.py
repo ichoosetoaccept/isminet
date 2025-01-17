@@ -24,12 +24,20 @@ class UnifiClient(BaseClient):
             "initialized_unifi_client",
             site=config.site,
             site_path=self.site_path,
+            host=config.host,
+            port=config.port,
+            verify_ssl=config.verify_ssl,
         )
 
     def _get_site_path(self, endpoint: str) -> str:
         """Get site-specific API endpoint path."""
         path = f"{self.site_path}/{endpoint}"
-        self.logger.debug("constructed_site_path", endpoint=endpoint, path=path)
+        self.logger.debug(
+            "constructed_site_path",
+            endpoint=endpoint,
+            path=path,
+            site=self.site_path,
+        )
         return path
 
     def _get_list_response(
@@ -55,13 +63,18 @@ class UnifiClient(BaseClient):
                 "invalid_response_structure",
                 expected="dictionary",
                 received=type(response).__name__,
+                response=str(response)[:200],  # Log first 200 chars of response
             )
             raise ResponseValidationError(
                 "Invalid response structure: expected dictionary", None
             )
 
         if "data" not in response:
-            self.logger.error("missing_data_field", response_keys=list(response.keys()))
+            self.logger.error(
+                "missing_data_field",
+                response_keys=list(response.keys()),
+                response=str(response)[:200],  # Log first 200 chars of response
+            )
             raise ResponseValidationError(
                 "Invalid response structure: missing 'data' field", None
             )
@@ -72,6 +85,7 @@ class UnifiClient(BaseClient):
                 "invalid_data_type",
                 expected="list",
                 received=type(data).__name__,
+                data_preview=str(data)[:200],  # Log first 200 chars of data
             )
             raise ResponseValidationError(
                 "Invalid response structure: 'data' field must be a list", None
@@ -83,6 +97,7 @@ class UnifiClient(BaseClient):
                 "validated_list_response",
                 model=model_class.__name__,
                 items_count=len(items),
+                fields=list(items[0].model_fields.keys()) if items else [],
             )
             return items
         except ValidationError as e:
@@ -90,6 +105,8 @@ class UnifiClient(BaseClient):
                 "response_validation_failed",
                 model=model_class.__name__,
                 error=str(e),
+                error_type=type(e).__name__,
+                validation_errors=e.errors(),
             )
             raise ResponseValidationError("Failed to validate response items", e)
 
@@ -116,16 +133,35 @@ class UnifiClient(BaseClient):
             "fetching_list",
             endpoint=endpoint,
             model=model_class.__name__,
+            method="GET",
         )
-        response: Dict[str, Any] = self.get(endpoint)  # type: ignore
-        if not isinstance(response, dict):
-            self.logger.error(
-                "invalid_response_structure",
-                expected="dictionary",
-                received=type(response).__name__,
+        try:
+            response: Dict[str, Any] = self.get(endpoint)  # type: ignore
+            self.logger.debug(
+                "received_response",
+                endpoint=endpoint,
+                response_type=type(response).__name__,
+                response_keys=list(response.keys())
+                if isinstance(response, dict)
+                else None,
             )
-            raise ResponseValidationError("Invalid response structure", None)
-        return self._get_list_response(response, model_class)
+            if not isinstance(response, dict):
+                self.logger.error(
+                    "invalid_response_structure",
+                    expected="dictionary",
+                    received=type(response).__name__,
+                    response=str(response)[:200],  # Log first 200 chars of response
+                )
+                raise ResponseValidationError("Invalid response structure", None)
+            return self._get_list_response(response, model_class)
+        except APIError as e:
+            self.logger.error(
+                "api_request_failed",
+                endpoint=endpoint,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+            raise
 
     def _get_by_mac(
         self,
@@ -152,6 +188,7 @@ class UnifiClient(BaseClient):
             mac=mac,
             item_type=item_type,
             items_count=len(items),
+            available_macs=[item.mac for item in items],  # type: ignore
         )
         for item in items:
             if item.mac == mac:  # type: ignore
@@ -159,12 +196,14 @@ class UnifiClient(BaseClient):
                     "found_item_by_mac",
                     mac=mac,
                     item_type=item_type,
+                    item_fields=list(item.model_fields.keys()),
                 )
                 return item
         self.logger.error(
             "item_not_found",
             mac=mac,
             item_type=item_type,
+            available_macs=[item.mac for item in items],  # type: ignore
         )
         raise APIError(f"{item_type} with MAC {mac} not found")
 
@@ -181,9 +220,22 @@ class UnifiClient(BaseClient):
         """
         self.logger.info("fetching_devices")
         endpoint = self._get_site_path("stat/device")
-        devices = self._get_list_by_endpoint(endpoint, Device)
-        self.logger.info("fetched_devices", count=len(devices))
-        return devices
+        try:
+            devices = self._get_list_by_endpoint(endpoint, Device)
+            self.logger.info(
+                "fetched_devices",
+                count=len(devices),
+                device_types=list(set(d.type for d in devices)),
+                models=list(set(d.model for d in devices)),
+            )
+            return devices
+        except (APIError, ResponseValidationError) as e:
+            self.logger.error(
+                "failed_to_fetch_devices",
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+            raise
 
     def get_clients(self) -> List[Client]:
         """
@@ -198,9 +250,29 @@ class UnifiClient(BaseClient):
         """
         self.logger.info("fetching_clients")
         endpoint = self._get_site_path("stat/sta")
-        clients = self._get_list_by_endpoint(endpoint, Client)
-        self.logger.info("fetched_clients", count=len(clients))
-        return clients
+        try:
+            clients = self._get_list_by_endpoint(endpoint, Client)
+            # Calculate statistics
+            active_count = sum(
+                1 for c in clients if c.last_seen is not None and c.last_seen > 0
+            )
+            guest_count = sum(1 for c in clients if c.is_guest is True)
+            wired_count = sum(1 for c in clients if c.is_wired is True)
+            self.logger.info(
+                "fetched_clients",
+                count=len(clients),
+                active_count=active_count,
+                guest_count=guest_count,
+                wired_count=wired_count,
+            )
+            return clients
+        except (APIError, ResponseValidationError) as e:
+            self.logger.error(
+                "failed_to_fetch_clients",
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+            raise
 
     def get_device(self, mac: str) -> Device:
         """
@@ -217,15 +289,28 @@ class UnifiClient(BaseClient):
             APIError: If API request fails
         """
         self.logger.info("fetching_device", mac=mac)
-        devices = self.get_devices()
-        device = self._get_by_mac(devices, mac, "Device")
-        self.logger.info(
-            "fetched_device",
-            mac=mac,
-            model=device.model,
-            type=device.type,
-        )
-        return device
+        try:
+            devices = self.get_devices()
+            device = self._get_by_mac(devices, mac, "Device")
+            self.logger.info(
+                "fetched_device",
+                mac=mac,
+                model=device.model,
+                type=device.type,
+                version=device.version,
+                ip=device.ip,
+                status=device.status,
+                uptime=device.uptime,
+            )
+            return device
+        except (APIError, ResponseValidationError) as e:
+            self.logger.error(
+                "failed_to_fetch_device",
+                mac=mac,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+            raise
 
     def get_client(self, mac: str) -> Client:
         """
@@ -242,16 +327,31 @@ class UnifiClient(BaseClient):
             APIError: If API request fails
         """
         self.logger.info("fetching_client", mac=mac)
-        clients = self.get_clients()
-        client = self._get_by_mac(clients, mac, "Client")
-        self.logger.info(
-            "fetched_client",
-            mac=mac,
-            hostname=client.hostname,
-            is_wired=client.is_wired,
-            is_guest=client.is_guest,
-        )
-        return client
+        try:
+            clients = self.get_clients()
+            client = self._get_by_mac(clients, mac, "Client")
+            # Calculate online status based on last_seen
+            is_online = client.last_seen is not None and client.last_seen > 0
+            self.logger.info(
+                "fetched_client",
+                mac=mac,
+                hostname=client.hostname,
+                ip=client.ip,
+                is_online=is_online,
+                is_guest=client.is_guest,
+                is_wired=client.is_wired,
+                first_seen=client.first_seen,
+                last_seen=client.last_seen,
+            )
+            return client
+        except (APIError, ResponseValidationError) as e:
+            self.logger.error(
+                "failed_to_fetch_client",
+                mac=mac,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+            raise
 
     def _get_single_response(
         self,

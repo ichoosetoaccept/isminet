@@ -4,9 +4,13 @@ This document outlines a focused approach to implementing structured logging for
 
 ## Progress Overview
 - Phase 1: Basic Setup ✅ (2/2 complete)
-- Phase 2: Core Component Logging 😮 (0/3 complete)
+- Phase 2: Core Component Logging 🔄 (2/3 complete)
+  - UniFi Client Logging ✅
+  - Model State Changes ✅
+  - System Operations 😮
 - Phase 3: Error Handling & Refinement 😮 (0/2 complete)
-- Testing Infrastructure ✅ (2/4 complete)
+- Phase 4: Test Deduplication & Organization 😮 (0/9 complete)
+- Testing Infrastructure ✅ (4/4 complete)
 
 ## Common Logging Patterns
 These patterns should be applied consistently where relevant:
@@ -50,26 +54,26 @@ These patterns should be applied consistently where relevant:
 
 ## Phase 2: Core Component Logging
 
-1. **UniFi Client Logging** 😮
-   - Log API request/response summaries
-   - Track authentication status
-   - Record device discovery events
-   - Monitor WebSocket connection state
+1. **UniFi Client Logging** ✅
+   - ✅ Log API request/response summaries
+   - ✅ Track authentication status
+   - ✅ Record device discovery events
+   - ✅ Monitor WebSocket connection state
    - Tests:
-     - Verify request/response logging
-     - Check error handling and retry logging
-     - Test WebSocket event logging
-     - Validate sensitive data is not logged
+     - ✅ Verify request/response logging
+     - ✅ Check error handling and retry logging
+     - ✅ Test WebSocket event logging
+     - ✅ Validate sensitive data is not logged
 
-2. **Model State Changes** 😮
-   - Log important model updates
-   - Track validation failures
-   - Record configuration changes
+2. **Model State Changes** ✅
+   - ✅ Log important model updates
+   - ✅ Track validation failures
+   - ✅ Record configuration changes
    - Tests:
-     - Verify model update logging
-     - Check validation error logging
-     - Test state change tracking
-     - Validate log context correctness
+     - ✅ Verify model update logging
+     - ✅ Check validation error logging
+     - ✅ Test state change tracking
+     - ✅ Validate log context correctness
 
 3. **System Operations** 😮
    - Log startup/shutdown
@@ -102,6 +106,28 @@ These patterns should be applied consistently where relevant:
      - Check log level appropriateness
      - Test logging performance impact
      - Validate log usefulness metrics
+
+## Phase 4: Test Deduplication & Organization
+
+Review and deduplicate tests across all test files:
+
+1. `test_api.py` - Review API-related tests 😮
+2. `test_models.py` - Review model tests ✅
+3. `test_logging.py` - Review logging tests ✅
+4. `test_unifi_client.py` - Review UniFi client tests 😮
+5. `test_device_models.py` - Review device model tests 😮
+6. `test_system_models.py` - Review system model tests 😮
+7. `test_network_models.py` - Review network model tests 😮
+8. `test_wireless_models.py` - Review wireless model tests 😮
+9. `test_validation.py` - Review validation tests ✅
+
+For each file:
+- [ ] Review test coverage and identify gaps
+- [ ] Check for duplicate test cases with other files
+- [ ] Move common fixtures to conftest.py
+- [ ] Ensure tests follow F.I.R.S.T principles
+- [ ] Update test names to clearly indicate purpose
+- [ ] Add or update docstrings for all test functions
 
 ## Testing Infrastructure
 
@@ -158,5 +184,8 @@ Create `tests/test_logging.py` with the following test categories:
 
 1. ✅ Set up basic logging configuration
 2. ✅ Add tests for current logging implementation
-3. 😮 Add logging to UniFi client with tests
-4. 😮 Gradually add logging to other components with tests
+3. ✅ Add logging to UniFi client with tests
+4. ✅ Add logging to models with tests
+5. 🔄 Add logging to system operations with tests
+6. 😮 Enhance error logging with context
+7. 😮 Review and optimize log levels

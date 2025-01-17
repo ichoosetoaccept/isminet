@@ -8,8 +8,10 @@ from typing import Generator
 import pytest
 import structlog
 from _pytest.logging import LogCaptureFixture
+from pydantic import ValidationError
 
 from isminet.logging import setup_logging, get_logger, LOG_DIR
+from isminet.models.base import UnifiBaseModel, Meta
 
 
 @pytest.fixture(autouse=True)
@@ -238,3 +240,55 @@ def test_disable_file_logging(env_setup: None, cleanup_log_files: None) -> None:
     # Neither log file should exist
     assert not (LOG_DIR / "dev.log").exists()
     assert not (LOG_DIR / "prod.log").exists()
+
+
+def test_model_initialization_logging(capsys: pytest.CaptureFixture[str]) -> None:
+    """Test that model initialization is logged correctly."""
+    setup_logging(level="DEBUG", development_mode=False)
+    test_data = {"name": "test", "value": 42}
+    UnifiBaseModel(**test_data)
+
+    captured = capsys.readouterr()
+    log_entries = [json.loads(line) for line in captured.out.strip().split("\n")]
+
+    init_log = next(
+        entry for entry in log_entries if entry["event"] == "model_initialized"
+    )
+    assert init_log["model"] == "UnifiBaseModel"
+    assert set(init_log["provided_fields"]) == {"name", "value"}
+
+
+def test_model_validation_error_logging(capsys: pytest.CaptureFixture[str]) -> None:
+    """Test that model validation errors are logged correctly."""
+    setup_logging(level="DEBUG", development_mode=False)
+
+    with pytest.raises(ValidationError):
+        Meta(rc="error")  # Should be "ok"
+
+    captured = capsys.readouterr()
+    log_entries = [json.loads(line) for line in captured.out.strip().split("\n")]
+
+    error_log = next(
+        entry for entry in log_entries if entry["event"] == "model_validation_failed"
+    )
+    assert error_log["model"] == "Meta"
+    assert "validation_errors" in error_log
+    assert error_log["error_type"] == "ValidationError"
+
+
+def test_model_serialization_logging(capsys: pytest.CaptureFixture[str]) -> None:
+    """Test that model serialization is logged correctly."""
+    setup_logging(level="DEBUG", development_mode=False)
+    model = UnifiBaseModel(name="test", value=42)
+
+    model.model_dump(exclude_unset=True)
+
+    captured = capsys.readouterr()
+    log_entries = [json.loads(line) for line in captured.out.strip().split("\n")]
+
+    dump_log = next(
+        entry for entry in log_entries if entry["event"] == "model_serialized"
+    )
+    assert dump_log["model"] == "UnifiBaseModel"
+    assert "included_fields" in dump_log
+    assert dump_log["exclude_unset"] is True

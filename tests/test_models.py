@@ -2,86 +2,18 @@
 
 import json
 from pathlib import Path
-from typing import Any, Dict, cast, Optional, List, Union, TypedDict
+from typing import Any, Dict, cast
 
 import pytest
-from pydantic import ValidationError, Field
+from pydantic import ValidationError
 
-from isminet.models.base import BaseResponse, UnifiBaseModel
-from isminet.models.mixins import ValidationMixin
+from isminet.models.base import BaseResponse
 from isminet.models import Site
 
 # Load test data from API response examples
 DOCS_DIR = Path(__file__).parent.parent / "docs" / "api_responses"
 with open(DOCS_DIR / "sites_response.json") as f:
     SITES_RESPONSE = cast(Dict[str, Any], json.load(f))
-
-# Constants for testing
-VALID_MAC = "00:11:22:33:44:55"
-VALID_IPV4 = "192.168.1.1"
-VALID_IPV6 = "2001:db8::1"
-VALID_NETMASK = "255.255.255.0"
-
-
-class TestModelDict(TypedDict, total=False):
-    """Type for TestModel input data."""
-
-    mac: str
-    ip: Optional[str]
-    netmask: Optional[str]
-    mac_list: Optional[List[str]]
-    version: Optional[str]
-
-
-# Test model with validation
-class TestModel(ValidationMixin, UnifiBaseModel):
-    """Test model with validation."""
-
-    mac: str = Field(description="MAC address")
-    ip: Optional[str] = Field(None, description="IP address")
-    netmask: Optional[str] = Field(None, description="Network mask")
-    mac_list: Optional[List[str]] = Field(None, description="MAC address list")
-    version: Optional[str] = Field(None, description="Version string")
-
-
-@pytest.mark.parametrize(
-    "field,value,expected_value,description",
-    [
-        ("mac", VALID_MAC, VALID_MAC.lower(), "Valid MAC address"),
-        ("ip", VALID_IPV4, VALID_IPV4, "Valid IPv4 address"),
-        ("ip", VALID_IPV6, VALID_IPV6, "Valid IPv6 address"),
-        ("netmask", VALID_NETMASK, VALID_NETMASK, "Valid netmask"),
-        ("mac_list", [VALID_MAC], [VALID_MAC.lower()], "Valid MAC address list"),
-    ],
-)
-def test_validation_mixin_valid_inputs(
-    field: str, value: Union[str, List[str]], expected_value: Any, description: str
-) -> None:
-    """Test ValidationMixin with valid inputs."""
-    data: TestModelDict = {"mac": VALID_MAC}  # Base required field
-    data[field] = value  # type: ignore
-    model = TestModel(**data)
-    assert getattr(model, field) == expected_value, description
-
-
-@pytest.mark.parametrize(
-    "field,invalid_value,error_pattern",
-    [
-        ("mac", "invalid", "Invalid MAC address format"),
-        ("ip", "invalid", "Invalid IPv4 address"),
-        ("netmask", "invalid", "Invalid network mask"),
-        ("mac_list", ["invalid"], "Invalid MAC address list"),
-        ("version", "1.0", "Version must be in format x.y.z"),
-    ],
-)
-def test_validation_mixin_invalid_inputs(
-    field: str, invalid_value: Union[str, List[str]], error_pattern: str
-) -> None:
-    """Test ValidationMixin with invalid inputs."""
-    data: TestModelDict = {"mac": VALID_MAC}  # Base required field
-    data[field] = invalid_value  # type: ignore
-    with pytest.raises(ValidationError, match=error_pattern):
-        TestModel(**data)
 
 
 @pytest.mark.parametrize(
@@ -213,7 +145,7 @@ def test_base_response_fields(
     [
         (
             {**SITES_RESPONSE, "meta": {"rc": "error"}},
-            "Response code must be 'ok'",  # Changed: match the actual error message
+            "Response code must be 'ok'",
         ),
         (
             {**SITES_RESPONSE, "data": []},

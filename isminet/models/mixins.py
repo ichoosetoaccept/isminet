@@ -63,6 +63,38 @@ class ValidationMixin:
             raise ValueError("Version must be in format x.y.z")
         return v
 
+    @field_validator("percentage")
+    @classmethod
+    def validate_percentage(cls, v: float) -> float:
+        """Validate percentage value."""
+        if not 0 <= v <= 100:
+            raise ValueError("Percentage must be between 0 and 100")
+        return v
+
+    @field_validator("non_negative")
+    @classmethod
+    def validate_non_negative(cls, v: int) -> int:
+        """Validate non-negative value."""
+        if v < 0:
+            raise ValueError("Value must be non-negative")
+        return v
+
+    @field_validator("negative")
+    @classmethod
+    def validate_negative(cls, v: int) -> int:
+        """Validate negative value."""
+        if v >= 0:
+            raise ValueError("Value must be negative")
+        return v
+
+    @field_validator("range_value")
+    @classmethod
+    def validate_range(cls, v: int) -> int:
+        """Validate range value."""
+        if not 0 <= v <= 10:
+            raise ValueError("range_value must be between 0 and 10")
+        return v
+
 
 class StatisticsMixin(UnifiBaseModel):
     """Mixin for network statistics."""
