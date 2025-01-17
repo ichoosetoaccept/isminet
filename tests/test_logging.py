@@ -490,3 +490,182 @@ def test_config_loading_logging(
     assert config_log["verify_ssl"] is True
     # API key should not be logged
     assert "api_key" not in config_log
+
+
+def test_error_context_logging(capsys: pytest.CaptureFixture[str]) -> None:
+    """Test that error logs include context and troubleshooting hints."""
+    setup_logging(level="INFO", development_mode=False)
+    from isminet.models.system import SystemHealth, DeviceType
+
+    # Try to create a health instance with invalid data
+    with pytest.raises(ValidationError):
+        SystemHealth(
+            device_type=DeviceType.UAP,
+            subsystem="test",
+            status="invalid_status",  # Invalid status value
+            status_code=0,
+            status_message="Test message",
+            last_check=1000,
+            next_check=2000,
+        )
+
+    # Check log output
+    captured = capsys.readouterr()
+    log_entries = [json.loads(line) for line in captured.out.strip().split("\n")]
+    error_log = next(
+        entry for entry in log_entries if entry["event"] == "model_validation_failed"
+    )
+
+    # Verify error context
+    assert error_log["model"] == "SystemHealth"
+    assert "validation_errors" in error_log
+    assert len(error_log["validation_errors"]) > 0
+
+    # Verify first validation error has required fields
+    validation_error = error_log["validation_errors"][0]
+    assert "type" in validation_error
+    assert "loc" in validation_error
+    assert "msg" in validation_error
+    assert "hint" in validation_error
+    assert "input" in validation_error
+    assert validation_error["hint"] is not None
+
+
+def test_recurring_error_detection(capsys: pytest.CaptureFixture[str]) -> None:
+    """Test that recurring errors are detected and logged."""
+    setup_logging(level="INFO", development_mode=False)
+    from isminet.models.system import SystemHealth, DeviceType
+    from isminet.models.base import _error_counter, _error_timestamps
+
+    # Clear error tracking state
+    _error_counter.clear()
+    _error_timestamps.clear()
+
+    # Generate multiple validation errors
+    for _ in range(4):
+        with pytest.raises(ValidationError):
+            SystemHealth(
+                device_type=DeviceType.UAP,
+                subsystem="test",
+                status="invalid_status",  # Same invalid status each time
+                status_code=0,
+                status_message="Test message",
+                last_check=1000,
+                next_check=2000,
+            )
+
+    # Check log output
+    captured = capsys.readouterr()
+    log_entries = [json.loads(line) for line in captured.out.strip().split("\n")]
+    warning_logs = [
+        entry for entry in log_entries if entry["event"] == "recurring_errors_detected"
+    ]
+
+    # Should have at least one warning about recurring errors
+    assert len(warning_logs) > 0
+    warning_log = warning_logs[0]
+    assert warning_log["error_type"] in str(warning_log["model"])
+    assert warning_log["count"] >= 3
+    assert "first_seen" in warning_log
+    assert "last_seen" in warning_log
+
+
+def test_error_handling_in_data_access(capsys: pytest.CaptureFixture[str]) -> None:
+    """Test error handling in data access operations."""
+    setup_logging(level="INFO", development_mode=False)
+    from isminet.models.system import SystemStatus, DeviceType
+
+    # Create a valid system status
+    system = SystemStatus(
+        device_type=DeviceType.UAP,
+        version="1.2.3",
+        uptime=3600,
+        health=[
+            {
+                "device_type": DeviceType.UAP,
+                "subsystem": "test",
+                "status": "ok",
+                "status_code": 0,
+                "status_message": "All good",
+                "last_check": 1000,
+                "next_check": 2000,
+            }
+        ],
+        processes=[],
+        services=[],
+        upgradable=False,
+        update_available=False,
+        storage_usage=1024,
+        storage_available=4096,
+    )
+
+    # Try to access an invalid index
+    with pytest.raises(IndexError):
+        _ = system.get_process(0)  # Empty list
+
+    # Check log output
+    captured = capsys.readouterr()
+    log_entries = [json.loads(line) for line in captured.out.strip().split("\n")]
+    error_logs = [
+        entry for entry in log_entries if entry["event"] == "index_out_of_range"
+    ]
+
+    # Verify error logging
+    assert len(error_logs) > 0
+    error_log = error_logs[0]
+    assert error_log["model"] == "SystemStatus"
+    assert "hint" in error_log
+    assert "data_length" in error_log
+    assert error_log["data_length"] == 0
+    assert error_log["index"] == 0
+
+
+def test_serialization_error_handling(capsys: pytest.CaptureFixture[str]) -> None:
+    """Test error handling during model serialization."""
+    setup_logging(level="INFO", development_mode=False)
+    from isminet.models.system import SystemStatus, DeviceType
+    from unittest.mock import patch
+
+    test_data = {
+        "device_type": DeviceType.UAP,
+        "version": "1.2.3",
+        "uptime": 3600,
+        "health": [
+            {
+                "device_type": DeviceType.UAP,
+                "subsystem": "test",
+                "status": "ok",
+                "status_code": 0,
+                "status_message": "All good",
+                "last_check": 1000,
+                "next_check": 2000,
+            }
+        ],
+        "processes": [],
+        "services": [],
+        "upgradable": False,
+        "update_available": False,
+        "storage_usage": 1024,
+        "storage_available": 4096,
+    }
+
+    system = SystemStatus(**test_data)
+
+    # Mock model_dump to raise an error
+    with patch("pydantic.BaseModel.model_dump", side_effect=Exception("Test error")):
+        with pytest.raises(Exception):
+            system.model_dump()
+
+    # Check log output
+    captured = capsys.readouterr()
+    log_entries = [json.loads(line) for line in captured.out.strip().split("\n")]
+    error_logs = [
+        entry for entry in log_entries if entry["event"] == "model_serialization_failed"
+    ]
+
+    # Verify error logging
+    assert len(error_logs) > 0
+    error_log = error_logs[0]
+    assert error_log["model"] == "SystemStatus"
+    assert error_log["error"] == "Test error"
+    assert error_log["error_type"] == "Exception"
