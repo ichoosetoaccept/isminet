@@ -8,21 +8,32 @@ from typing import Any, Callable, List, MutableMapping
 import structlog
 from rich.console import Console
 
-from .settings import Settings
+from .settings import Settings  # Import type only
 
 console = Console()
 
+# Delay the settings import until needed to avoid circular imports
+_settings = None
+
+
+def get_settings() -> Settings:
+    """Get settings instance, importing it only when needed."""
+    global _settings
+    if _settings is None:
+        from .settings import settings as settings_instance
+
+        _settings = settings_instance
+    return _settings
+
+
+def get_logger(name: str) -> structlog.BoundLogger:
+    """Get a structured logger instance."""
+    return structlog.get_logger(name)
+
 
 def setup_logging() -> None:
-    """Configure structured logging for the application.
-
-    Uses settings from the central configuration:
-    - settings.log_level: The logging level to use
-    - settings.development_mode: Whether to use pretty printing
-    - settings.log_to_file: Whether to log to file
-    """
-    # Reload settings to pick up environment variable changes
-    settings = Settings()
+    """Configure structured logging based on settings."""
+    settings = get_settings()
 
     # Convert string level to logging level
     log_level = getattr(logging, settings.log_level.upper())
@@ -111,15 +122,3 @@ def setup_logging() -> None:
         log_to_file=settings.log_to_file,
         log_file=settings.get_log_file_path() if settings.log_to_file else None,
     )
-
-
-def get_logger(name: str) -> structlog.stdlib.BoundLogger:
-    """Get a logger instance for the given name.
-
-    Args:
-        name: The name of the logger (usually __name__)
-
-    Returns:
-        A structured logger instance
-    """
-    return structlog.get_logger(name)
