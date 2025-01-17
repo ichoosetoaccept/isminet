@@ -7,9 +7,7 @@ from typing import (
     TypeVar,
     get_args,
     get_origin,
-    Dict,
     Any,
-    Union,
 )
 from pydantic import (
     BaseModel,
@@ -84,48 +82,69 @@ class ValidationMixin(UnifiBaseModel):
 class Meta(BaseModel):
     """Meta information for UniFi Network API responses."""
 
-    rc: str = "ok"
-    msg: Optional[str] = None
+    rc: str = Field(description="Response code")
+    msg: Optional[str] = Field(None, description="Response message")
+
+    @field_validator("rc")
+    @classmethod
+    def validate_rc(cls, v: str) -> str:
+        """Validate response code."""
+        if v != "ok":
+            raise ValueError("Response code must be 'ok'")
+        return v
 
 
-class BaseResponse(BaseModel, Generic[T]):
-    """Base response model for UniFi Network API."""
+class BaseResponse(UnifiBaseModel, Generic[T]):
+    """Base response model for UniFi API responses."""
 
-    model_config = ConfigDict(extra="allow")
+    meta: Meta
+    data: List[T]
 
-    meta: Dict[str, Any]
-    data: Union[T, List[T]]
+    @field_validator("meta")
+    @classmethod
+    def validate_meta(cls, v: Meta) -> Meta:
+        """Validate meta field."""
+        if v.rc != "ok":
+            raise ValueError("Invalid response status")
+        return v
 
-    def validate_data(self) -> None:
-        """
-        Validate the data field against the specified generic type argument.
-        
-        This method ensures that the `data` attribute conforms to the expected type defined during BaseResponse instantiation. It handles both single instances and lists of instances.
-        
-        Parameters:
-            None
-        
-        Raises:
-            ValidationError: If the data does not match the expected type or cannot be converted to it.
-        
-        Notes:
-            - Skips validation if no generic type is specified
-            - Supports validation of both single items and lists of items
-            - Uses model type constructor to validate and potentially convert input data
-        """
-        if not hasattr(self, "__orig_bases__"):
-            return
+    @field_validator("data")
+    @classmethod
+    def validate_data(cls, v: List[T]) -> List[T]:
+        """Validate data field."""
+        if not v:
+            raise ValueError("List should have at least 1 item")
+        return v
 
-        model_type = get_args(self.__orig_bases__[0])[0]
+    def __getitem__(self, index: int) -> T:
+        """Get item from data list by index."""
+        if not isinstance(self.data, list):
+            raise TypeError("Data field must be a list")
+        try:
+            return self.data[index]
+        except IndexError:
+            raise IndexError("Data index out of range")
+
+    def __getattr__(self, name: str) -> Any:
+        """Get attribute from data list."""
+        if name == "data":
+            raise AttributeError(
+                f"{type(self).__name__!r} object has no attribute {name!r}"
+            )
+        if not isinstance(self.data, list):
+            raise TypeError("Data field must be a list")
         if not self.data:
-            return
-
-        if isinstance(self.data, list):
-            for item in self.data:
-                if not isinstance(item, model_type):
-                    model_type(**item)
-        elif not isinstance(self.data, model_type):
-            model_type(**self.data)
+            raise IndexError("Data list is empty")
+        if name.startswith("data["):
+            # Parse array access
+            try:
+                index = int(name[5:-1])  # Extract index from "data[X]"
+                return self[index]
+            except (ValueError, IndexError) as e:
+                raise AttributeError(
+                    f"{type(self).__name__!r} object has no attribute {name!r}"
+                ) from e
+        return getattr(self.data[0], name)
 
     @classmethod
     def get_data_type(cls) -> type:

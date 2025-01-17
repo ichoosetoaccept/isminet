@@ -1,7 +1,7 @@
 """Configuration management for the isminet package."""
 
 from enum import Enum
-from typing import Any
+from typing import Any, Optional
 from urllib.parse import urljoin
 
 from pydantic import Field, field_validator
@@ -32,12 +32,12 @@ class APIConfig(BaseSettings):
 
     # Required settings
     api_key: str = Field(description="UniFi Network API key")
+    host: str = Field(description="UniFi Network controller hostname/IP")
 
     # Optional settings with defaults
-    host: str = Field(
-        default="192.168.1.1", description="UniFi Network controller hostname/IP"
+    port: Optional[int] = Field(
+        default=None, description="UniFi Network controller port"
     )
-    port: int = Field(default=443, description="UniFi Network controller port")
     verify_ssl: bool = Field(
         default=False, description="Whether to verify SSL certificates"
     )
@@ -50,21 +50,38 @@ class APIConfig(BaseSettings):
     @field_validator("host")
     @classmethod
     def validate_host(cls, v: str) -> str:
-        """Validate host value."""
+        """Validate host is not empty."""
         if not v:
             raise ValueError("Host cannot be empty")
-        if "://" in v:
-            raise ValueError("Host should not include protocol")
-        return v.strip()
+        return v
+
+    @field_validator("api_key")
+    @classmethod
+    def validate_api_key(cls, v: str) -> str:
+        """Validate API key is not empty."""
+        if not v:
+            raise ValueError("API key cannot be empty")
+        return v
+
+    @field_validator("port")
+    @classmethod
+    def validate_port(cls, v: Optional[int]) -> Optional[int]:
+        """Validate port is in valid range."""
+        if v is not None and (v < 1 or v > 65535):
+            raise ValueError("Port must be between 1 and 65535")
+        return v
 
     @property
     def base_url(self) -> str:
         """Get base URL for API requests."""
-        return f"https://{self.host}:{self.port}"
+        scheme = "https" if self.verify_ssl else "http"
+        if self.port:
+            return f"{scheme}://{self.host}:{self.port}"
+        return f"{scheme}://{self.host}"
 
     @property
     def api_url(self) -> str:
-        """Get complete API URL."""
+        """Get API URL for requests."""
         return urljoin(self.base_url, self.api_version.path)
 
     def get_headers(self) -> dict[str, str]:
@@ -72,17 +89,10 @@ class APIConfig(BaseSettings):
         return {
             "Accept": "application/json",
             "Content-Type": "application/json",
-            "X-API-KEY": self.api_key,
+            "X-API-Key": self.api_key,
         }
 
     @classmethod
     def from_env(cls, **kwargs: Any) -> "APIConfig":
-        """Create configuration from environment variables.
-
-        Args:
-            **kwargs: Override any settings from environment
-
-        Returns:
-            APIConfig instance
-        """
+        """Create config from environment variables."""
         return cls(**kwargs)

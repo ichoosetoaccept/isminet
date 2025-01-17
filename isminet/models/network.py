@@ -2,10 +2,11 @@
 
 from typing import Optional, List, Dict, Any
 from pydantic import Field, field_validator, model_validator
+import ipaddress
 
-from .base import UnifiBaseModel, ValidationMixin, NetworkMixin
+from .base import UnifiBaseModel, ValidationMixin
 from .validators import validate_ip, validate_ip_list
-from .enums import DHCPMode, IGMPMode
+from .enums import DHCPMode
 
 
 class DHCPConfiguration(ValidationMixin, UnifiBaseModel):
@@ -38,12 +39,12 @@ class DHCPConfiguration(ValidationMixin, UnifiBaseModel):
     def validate_dhcp_range(self) -> "DHCPConfiguration":
         """
         Validates the DHCP range configuration when server mode is enabled.
-        
+
         Ensures that both start and end IP addresses are specified when DHCP server mode is active.
-        
+
         Raises:
             ValueError: If DHCP server mode is enabled but start or end IP addresses are not set.
-        
+
         Returns:
             DHCPConfiguration: The validated configuration instance.
         """
@@ -56,122 +57,65 @@ class DHCPConfiguration(ValidationMixin, UnifiBaseModel):
         return self
 
 
-class VLANConfiguration(ValidationMixin, NetworkMixin, UnifiBaseModel):
-    """VLAN configuration."""
+class VLANConfiguration(UnifiBaseModel):
+    """VLAN configuration model."""
 
-    vlan_id: int = Field(description="VLAN ID", ge=1, le=4094)
-    name: str = Field(description="VLAN name")
-    enabled: bool = Field(description="Whether VLAN is enabled")
+    id: int = Field(description="VLAN ID", ge=1, le=4094)
+    name: str = Field(description="VLAN name", min_length=1)
+    enabled: bool = Field(description="VLAN enabled")
     subnet: str = Field(description="VLAN subnet")
+    gateway_ip: str = Field(description="Gateway IP address")
+    tagged_ports: List[int] = Field(description="Tagged ports", default_factory=list)
+    untagged_ports: List[int] = Field(
+        description="Untagged ports", default_factory=list
+    )
     dhcp: Optional[DHCPConfiguration] = Field(None, description="DHCP configuration")
-    igmp_snooping: Optional[bool] = Field(None, description="IGMP snooping enabled")
-    igmp_mode: Optional[IGMPMode] = Field(None, description="IGMP mode")
-    multicast_dns: Optional[bool] = Field(None, description="mDNS enabled")
-    tagged_ports: Optional[List[int]] = Field(None, description="Tagged ports")
-    untagged_ports: Optional[List[int]] = Field(None, description="Untagged ports")
-
-    _validate_ip = field_validator("subnet")(validate_ip)
 
     @model_validator(mode="after")
     def validate_ports(self) -> "VLANConfiguration":
-        """
-        Validate that ports are not simultaneously tagged and untagged.
-        
-        This method checks for port configuration conflicts by ensuring no port is present in both
-        `tagged_ports` and `untagged_ports` lists. If any common ports are found, it raises a
-        `ValueError` with details of the conflicting ports.
-        
-        Returns:
-            VLANConfiguration: The current VLAN configuration instance after validation.
-        
-        Raises:
-            ValueError: If any port is configured as both tagged and untagged.
-        """
-        if self.tagged_ports and self.untagged_ports:
-            common_ports = set(self.tagged_ports) & set(self.untagged_ports)
-            if common_ports:
-                raise ValueError(
-                    f"Ports {common_ports} cannot be both tagged and untagged"
-                )
+        """Validate port configuration."""
+        tagged_set = set(self.tagged_ports)
+        untagged_set = set(self.untagged_ports)
+        if tagged_set & untagged_set:
+            raise ValueError("Port cannot be both tagged and untagged")
         return self
 
 
-class NetworkConfiguration(ValidationMixin, UnifiBaseModel):
-    """Network configuration for UniFi devices."""
+class NetworkConfiguration(UnifiBaseModel):
+    """Network configuration model."""
 
-    name: str = Field(description="Network name")
-    purpose: str = Field(description="Network purpose (corporate, guest, iot)")
-    enabled: bool = Field(description="Whether network is enabled")
+    name: str = Field(description="Network name", min_length=1)
+    enabled: bool = Field(description="Network enabled")
+    purpose: str = Field(description="Network purpose")
     subnet: str = Field(description="Network subnet")
-    vlan_enabled: bool = Field(description="Whether VLAN is enabled")
-    vlans: Optional[List[VLANConfiguration]] = Field(
-        None, description="VLAN configurations"
-    )
+    vlan_enabled: bool = Field(description="VLAN enabled")
+    vlans: List[VLANConfiguration] = Field(description="VLAN configuration")
     dhcp: Optional[DHCPConfiguration] = Field(None, description="DHCP configuration")
-    igmp_snooping: Optional[bool] = Field(None, description="IGMP snooping enabled")
-    igmp_mode: Optional[IGMPMode] = Field(None, description="IGMP mode")
-    multicast_dns: Optional[bool] = Field(None, description="mDNS enabled")
-    multicast_enhancement: Optional[bool] = Field(
-        None, description="Multicast enhancement"
+    ipv6_ra_enabled: Optional[bool] = Field(
+        None, description="IPv6 router advertisements enabled"
     )
     ipv6_interface_type: Optional[str] = Field(None, description="IPv6 interface type")
-    ipv6_ra_enabled: Optional[bool] = Field(None, description="IPv6 RA enabled")
-    ipv6_pd_interface: Optional[str] = Field(None, description="IPv6 PD interface")
-    ipv6_pd_prefixid: Optional[int] = Field(None, description="IPv6 PD prefix ID")
-    ipv6_pd_start: Optional[str] = Field(None, description="IPv6 PD start")
-    ipv6_pd_stop: Optional[str] = Field(None, description="IPv6 PD stop")
+    ipv6_pd_prefixid: Optional[int] = Field(
+        None, description="IPv6 prefix delegation ID", ge=0
+    )
+    ipv6_addresses: Optional[List[str]] = Field(None, description="IPv6 addresses")
 
-    _validate_ip = field_validator("subnet")(validate_ip)
-
-    @field_validator("purpose")
+    @field_validator("ipv6_interface_type")
     @classmethod
-    def validate_purpose(cls, v: str) -> str:
-        """
-        Validate the network purpose against a predefined set of valid options.
-        
-        Parameters:
-            cls (type): The class on which the validator is called (automatically passed by Pydantic).
-            v (str): The network purpose to validate.
-        
-        Returns:
-            str: The validated network purpose.
-        
-        Raises:
-            ValueError: If the provided purpose is not one of the valid options ('corporate', 'guest', 'iot').
-        
-        Example:
-            # Valid usage
-            purpose = validate_purpose(NetworkConfiguration, 'corporate')  # Returns 'corporate'
-            
-            # Invalid usage
-            purpose = validate_purpose(NetworkConfiguration, 'invalid')  # Raises ValueError
-        """
-        valid_purposes = {"corporate", "guest", "iot"}
-        if v not in valid_purposes:
-            raise ValueError(f"Purpose must be one of: {', '.join(valid_purposes)}")
+    def validate_ipv6_interface_type(cls, v: Optional[str]) -> Optional[str]:
+        """Validate IPv6 interface type."""
+        if v is not None and v not in ["upstream", "downstream"]:
+            raise ValueError("IPv6 interface type must be 'upstream' or 'downstream'")
         return v
 
-    @model_validator(mode="after")
-    def validate_vlan_config(self) -> "NetworkConfiguration":
-        """
-        Validate the VLAN configuration for a network.
-        
-        This method performs two key validation checks:
-        1. Ensures VLAN configurations are provided when VLANs are enabled
-        2. Checks that no duplicate VLAN IDs exist in the configuration
-        
-        Raises:
-            ValueError: If VLANs are enabled without configurations or if duplicate VLAN IDs are detected
-        
-        Returns:
-            NetworkConfiguration: The validated network configuration instance
-        """
-        if self.vlan_enabled and not self.vlans:
-            raise ValueError(
-                "VLAN configurations must be provided when VLAN is enabled"
-            )
-        if self.vlans:
-            vlan_ids = [vlan.vlan_id for vlan in self.vlans]
-            if len(vlan_ids) != len(set(vlan_ids)):
-                raise ValueError("Duplicate VLAN IDs are not allowed")
-        return self
+    @field_validator("ipv6_addresses")
+    @classmethod
+    def validate_ipv6_addresses(cls, v: Optional[List[str]]) -> Optional[List[str]]:
+        """Validate IPv6 addresses."""
+        if v is not None:
+            for addr in v:
+                try:
+                    ipaddress.IPv6Address(addr)
+                except ValueError:
+                    raise ValueError("Invalid IPv6 address format")
+        return v

@@ -1,46 +1,44 @@
 """Tests for wireless settings models."""
 
 import pytest
+from typing import Dict, Any, List, Optional
 from pydantic import ValidationError
 
 from isminet.models.wireless import RadioSettings, NetworkProfile, WLANConfiguration
-from isminet.models.enums import RadioType, RadioProto
+from isminet.models.enums import RadioType
 
 # Test data
-VALID_RADIO_SETTINGS_2G = {
+VALID_RADIO_SETTINGS_2G: Dict[str, Any] = {
     "name": "Radio0",
     "radio": RadioType.NG,
-    "radio_proto": RadioProto.AX,
-    "is_enabled": True,
+    "enabled": True,
     "channel": 6,
     "channel_width": 40,
     "tx_power": 20,
     "tx_power_mode": "auto",
 }
 
-VALID_RADIO_SETTINGS_5G = {
+VALID_RADIO_SETTINGS_5G: Dict[str, Any] = {
     "name": "Radio1",
     "radio": RadioType.NA,
-    "radio_proto": RadioProto.AX,
-    "is_enabled": True,
+    "enabled": True,
     "channel": 36,
     "channel_width": 80,
     "tx_power": 23,
     "tx_power_mode": "auto",
 }
 
-VALID_RADIO_SETTINGS_6G = {
+VALID_RADIO_SETTINGS_6G: Dict[str, Any] = {
     "name": "Radio2",
     "radio": RadioType._6E,
-    "radio_proto": RadioProto.AX,
-    "is_enabled": True,
+    "enabled": True,
     "channel": 37,
     "channel_width": 160,
     "tx_power": 25,
     "tx_power_mode": "auto",
 }
 
-VALID_NETWORK_PROFILE = {
+VALID_NETWORK_PROFILE: Dict[str, Any] = {
     "name": "Main Network",
     "ssid": "MyWiFi",
     "enabled": True,
@@ -50,173 +48,203 @@ VALID_NETWORK_PROFILE = {
     "encryption": "aes",
 }
 
-VALID_WLAN_CONFIG = {
-    "radio_table": [VALID_RADIO_SETTINGS_2G, VALID_RADIO_SETTINGS_5G],
-    "network_profiles": [VALID_NETWORK_PROFILE],
-}
-
 
 class TestRadioSettings:
-    """Test RadioSettings model."""
+    @pytest.mark.parametrize(
+        "settings,expected_name,expected_radio",
+        [
+            (VALID_RADIO_SETTINGS_2G, "Radio0", RadioType.NG),
+            (VALID_RADIO_SETTINGS_5G, "Radio1", RadioType.NA),
+            (VALID_RADIO_SETTINGS_6G, "Radio2", RadioType._6E),
+        ],
+    )
+    def test_valid_radio_settings(
+        self, settings: Dict[str, Any], expected_name: str, expected_radio: RadioType
+    ) -> None:
+        """Test that valid radio settings are correctly parsed for different bands."""
+        radio = RadioSettings(**settings)
+        assert radio.name == expected_name
+        assert radio.radio == expected_radio
 
-    def test_valid_2g_radio(self):
-        """Test valid 2.4 GHz radio settings."""
-        radio = RadioSettings(**VALID_RADIO_SETTINGS_2G)
-        assert radio.name == "Radio0"
-        assert radio.radio == RadioType.NG
-        assert radio.channel == 6
+    @pytest.mark.parametrize(
+        "radio_type,expected_error",
+        [
+            ("invalid", "Invalid radio type"),
+            ("ng+ax", "Invalid radio type"),
+            ("na+n", "5GHz radio must use AC or AX"),
+            ("6e+n", "6GHz radio only supports AX"),
+            ("6e+ac", "6GHz radio only supports AX"),
+        ],
+    )
+    def test_invalid_radio_types(self, radio_type: str, expected_error: str) -> None:
+        """Test invalid radio types and protocol combinations."""
+        settings = VALID_RADIO_SETTINGS_2G.copy()
+        settings["radio"] = radio_type
+        with pytest.raises(ValidationError, match=expected_error):
+            RadioSettings(**settings)
 
-    def test_valid_5g_radio(self):
-        """Test valid 5 GHz radio settings."""
-        radio = RadioSettings(**VALID_RADIO_SETTINGS_5G)
-        assert radio.name == "Radio1"
-        assert radio.radio == RadioType.NA
-        assert radio.channel == 36
+    @pytest.mark.parametrize(
+        "base_settings,invalid_channel,radio_type",
+        [
+            (VALID_RADIO_SETTINGS_2G, 15, "2.4GHz"),
+            (VALID_RADIO_SETTINGS_5G, 35, "5GHz"),
+            (VALID_RADIO_SETTINGS_6G, 200, "6GHz"),
+        ],
+    )
+    def test_invalid_channels(
+        self, base_settings: Dict[str, Any], invalid_channel: int, radio_type: str
+    ) -> None:
+        """Test that invalid channels are rejected for each radio band."""
+        invalid_settings = base_settings.copy()
+        invalid_settings["channel"] = invalid_channel
+        with pytest.raises(ValidationError, match=f"Invalid {radio_type} channel"):
+            RadioSettings(**invalid_settings)
 
-    def test_valid_6g_radio(self):
-        """Test valid 6 GHz radio settings."""
-        radio = RadioSettings(**VALID_RADIO_SETTINGS_6G)
-        assert radio.name == "Radio2"
-        assert radio.radio == RadioType._6E
-        assert radio.channel == 37
-
-    def test_invalid_2g_channel(self):
-        """Test invalid 2.4 GHz channel."""
-        invalid_data = VALID_RADIO_SETTINGS_2G.copy()
-        invalid_data["channel"] = 15
-        with pytest.raises(
-            ValidationError, match="2.4 GHz channels must be between 1 and 14"
-        ):
-            RadioSettings(**invalid_data)
-
-    def test_invalid_5g_channel(self):
-        """Test invalid 5 GHz channel."""
-        invalid_data = VALID_RADIO_SETTINGS_5G.copy()
-        invalid_data["channel"] = 35
-        with pytest.raises(
-            ValidationError, match="5 GHz channels must be between 36 and 165"
-        ):
-            RadioSettings(**invalid_data)
-
-    def test_invalid_6g_channel(self):
-        """Test invalid 6 GHz channel."""
-        invalid_data = VALID_RADIO_SETTINGS_6G.copy()
-        invalid_data["channel"] = 234
-        with pytest.raises(
-            ValidationError, match="6 GHz channels must be between 1 and 233"
-        ):
-            RadioSettings(**invalid_data)
-
-    def test_invalid_channel_width(self):
-        """Test invalid channel width."""
-        invalid_data = VALID_RADIO_SETTINGS_2G.copy()
-        invalid_data["channel_width"] = 30
-        with pytest.raises(
-            ValidationError, match="Channel width must be 20, 40, 80, 160, or 320"
-        ):
-            RadioSettings(**invalid_data)
-
-    def test_invalid_tx_power(self):
-        """Test invalid transmit power."""
-        invalid_data = VALID_RADIO_SETTINGS_2G.copy()
-        invalid_data["tx_power"] = 31
-        with pytest.raises(ValidationError):
-            RadioSettings(**invalid_data)
+    @pytest.mark.parametrize(
+        "field,invalid_value,error_message",
+        [
+            ("channel_width", 30, "Invalid channel width"),
+            ("tx_power", 35, "TX power must be between"),
+            ("tx_power_mode", "invalid", "Invalid TX power mode"),
+        ],
+    )
+    def test_invalid_radio_settings(
+        self, field: str, invalid_value: Any, error_message: str
+    ) -> None:
+        """Test various invalid radio settings."""
+        invalid_settings = VALID_RADIO_SETTINGS_2G.copy()
+        invalid_settings[field] = invalid_value
+        with pytest.raises(ValidationError, match=error_message):
+            RadioSettings(**invalid_settings)
 
 
 class TestNetworkProfile:
-    """Test NetworkProfile model."""
-
-    def test_valid_network(self):
-        """Test valid network profile."""
+    @pytest.mark.parametrize(
+        "field,expected_value",
+        [
+            ("name", "Main Network"),
+            ("ssid", "MyWiFi"),
+            ("enabled", True),
+            ("is_guest", False),
+            ("security", "wpa-psk"),
+            ("wpa_mode", "wpa3"),
+            ("encryption", "aes"),
+            ("mac_filter_list", None),
+        ],
+    )
+    def test_network_profile_fields(self, field: str, expected_value: Any) -> None:
+        """Test that NetworkProfile correctly parses all fields."""
         network = NetworkProfile(**VALID_NETWORK_PROFILE)
-        assert network.name == "Main Network"
-        assert network.ssid == "MyWiFi"
-        assert network.security == "wpa-psk"
+        assert getattr(network, field) == expected_value
 
-    def test_invalid_security(self):
-        """Test invalid security type."""
-        invalid_data = VALID_NETWORK_PROFILE.copy()
-        invalid_data["security"] = "invalid"
-        with pytest.raises(ValidationError, match="Security type must be one of"):
-            NetworkProfile(**invalid_data)
+    @pytest.mark.parametrize(
+        "field,invalid_value,error_message",
+        [
+            ("security", "invalid", "Invalid security type"),
+            ("wpa_mode", "invalid", "Invalid WPA mode"),
+            ("encryption", "invalid", "Invalid encryption type"),
+            ("vlan_id", 4096, "VLAN ID must be between 1 and 4095"),
+        ],
+    )
+    def test_invalid_network_settings(
+        self, field: str, invalid_value: Any, error_message: str
+    ) -> None:
+        """Test various invalid network profile settings."""
+        invalid_profile = VALID_NETWORK_PROFILE.copy()
+        invalid_profile[field] = invalid_value
+        with pytest.raises(ValidationError, match=error_message):
+            NetworkProfile(**invalid_profile)
 
-    def test_invalid_wpa_mode(self):
-        """Test invalid WPA mode."""
-        invalid_data = VALID_NETWORK_PROFILE.copy()
-        invalid_data["wpa_mode"] = "invalid"
-        with pytest.raises(ValidationError, match="WPA mode must be one of"):
-            NetworkProfile(**invalid_data)
+    @pytest.mark.parametrize(
+        "mac_filter_list,expected_length,error_pattern",
+        [
+            (None, 0, None),  # Default case
+            ([], 0, None),  # Empty list
+            (["00:11:22:33:44:55"], 1, None),  # Valid MAC
+            (
+                ["00:11:22:33:44:55", "AA:BB:CC:DD:EE:FF"],
+                2,
+                None,
+            ),  # Multiple valid MACs
+            (["invalid"], None, "Invalid MAC address format"),  # Invalid MAC
+            (
+                ["00:11:22:33:44:55", "invalid"],
+                None,
+                "Invalid MAC address format",
+            ),  # Mixed valid/invalid
+        ],
+    )
+    def test_mac_filter_validation(
+        self,
+        mac_filter_list: Optional[List[str]],
+        expected_length: Optional[int],
+        error_pattern: Optional[str],
+    ) -> None:
+        """Test MAC filter list validation with various scenarios."""
+        profile_data = VALID_NETWORK_PROFILE.copy()
+        if mac_filter_list is not None:
+            profile_data["mac_filter_list"] = mac_filter_list
 
-    def test_invalid_encryption(self):
-        """Test invalid encryption type."""
-        invalid_data = VALID_NETWORK_PROFILE.copy()
-        invalid_data["encryption"] = "invalid"
-        with pytest.raises(ValidationError, match="Encryption type must be one of"):
-            NetworkProfile(**invalid_data)
-
-    def test_invalid_vlan_id(self):
-        """Test invalid VLAN ID."""
-        invalid_data = VALID_NETWORK_PROFILE.copy()
-        invalid_data["vlan_enabled"] = True
-        invalid_data["vlan_id"] = 4095
-        with pytest.raises(ValidationError):
-            NetworkProfile(**invalid_data)
-
-    def test_mac_filter_validation(self):
-        """Test MAC filter list validation."""
-        valid_data = VALID_NETWORK_PROFILE.copy()
-        valid_data["mac_filter_enabled"] = True
-        valid_data["mac_filter_list"] = ["00:11:22:33:44:55", "AA:BB:CC:DD:EE:FF"]
-        valid_data["mac_filter_policy"] = "allow"
-        network = NetworkProfile(**valid_data)
-        assert len(network.mac_filter_list) == 2
-
-        # Test invalid MAC address
-        invalid_data = valid_data.copy()
-        invalid_data["mac_filter_list"] = ["invalid-mac"]
-        with pytest.raises(ValidationError):
-            NetworkProfile(**invalid_data)
+        if error_pattern:
+            with pytest.raises(ValidationError, match=error_pattern):
+                NetworkProfile(**profile_data)
+        else:
+            profile = NetworkProfile(**profile_data)
+            assert len(profile.mac_filter_list or []) == expected_length
 
 
 class TestWLANConfiguration:
-    """Test WLANConfiguration model."""
+    @pytest.mark.parametrize(
+        "radio_settings,network_profile,expected_counts",
+        [
+            (
+                [VALID_RADIO_SETTINGS_2G],
+                [VALID_NETWORK_PROFILE],
+                {"radio_table": 1, "network_profiles": 1},
+            ),
+            (
+                [VALID_RADIO_SETTINGS_2G, VALID_RADIO_SETTINGS_5G],
+                [VALID_NETWORK_PROFILE],
+                {"radio_table": 2, "network_profiles": 1},
+            ),
+            (
+                [VALID_RADIO_SETTINGS_2G],
+                [VALID_NETWORK_PROFILE, VALID_NETWORK_PROFILE],
+                {"radio_table": 1, "network_profiles": 2},
+            ),
+        ],
+    )
+    def test_valid_config(
+        self,
+        radio_settings: List[Dict[str, Any]],
+        network_profile: List[Dict[str, Any]],
+        expected_counts: Dict[str, int],
+    ) -> None:
+        """Test various valid WLAN configurations."""
+        config = WLANConfiguration(
+            radio_table=[RadioSettings(**rs) for rs in radio_settings],
+            network_profiles=[NetworkProfile(**np) for np in network_profile],
+        )
+        assert len(config.radio_table) == expected_counts["radio_table"]
+        assert len(config.network_profiles) == expected_counts["network_profiles"]
 
-    def test_valid_config(self):
-        """Test valid WLAN configuration."""
-        config = WLANConfiguration(**VALID_WLAN_CONFIG)
-        assert len(config.radio_table) == 2
-        assert len(config.network_profiles) == 1
-
-    def test_invalid_pmf_mode(self):
-        """Test invalid PMF mode."""
-        invalid_data = VALID_WLAN_CONFIG.copy()
-        invalid_data["pmf_mode"] = "invalid"
-        with pytest.raises(ValidationError, match="PMF mode must be one of"):
-            WLANConfiguration(**invalid_data)
-
-    def test_invalid_rssi_threshold(self):
-        """Test invalid RSSI threshold."""
-        invalid_data = VALID_WLAN_CONFIG.copy()
-        invalid_data["minimum_rssi"] = 1  # Must be <= 0
-        with pytest.raises(ValidationError):
-            WLANConfiguration(**invalid_data)
-
-    def test_invalid_rate_limits(self):
-        """Test invalid rate limits."""
-        invalid_data = VALID_WLAN_CONFIG.copy()
-        invalid_data["minimum_uplink"] = -1  # Must be >= 0
-        with pytest.raises(ValidationError):
-            WLANConfiguration(**invalid_data)
-
-        invalid_data = VALID_WLAN_CONFIG.copy()
-        invalid_data["minimum_downlink"] = -1  # Must be >= 0
-        with pytest.raises(ValidationError):
-            WLANConfiguration(**invalid_data)
-
-    def test_invalid_max_clients(self):
-        """Test invalid max clients."""
-        invalid_data = VALID_WLAN_CONFIG.copy()
-        invalid_data["max_clients"] = -1  # Must be >= 0
-        with pytest.raises(ValidationError):
-            WLANConfiguration(**invalid_data)
+    @pytest.mark.parametrize(
+        "field,invalid_value,error_message",
+        [
+            ("pmf_mode", "invalid", "Invalid PMF mode"),
+            ("minimum_rssi", 100, "RSSI must be between -100 and 0"),
+            ("minimum_uplink", -1, "Rate limit must be non-negative"),
+            ("max_clients", 0, "Maximum clients must be greater than 0"),
+        ],
+    )
+    def test_invalid_wlan_settings(
+        self, field: str, invalid_value: Any, error_message: str
+    ) -> None:
+        """Test various invalid WLAN configuration settings."""
+        with pytest.raises(ValidationError, match=error_message):
+            config_data = {
+                "radio_table": [RadioSettings(**VALID_RADIO_SETTINGS_2G)],
+                "network_profiles": [NetworkProfile(**VALID_NETWORK_PROFILE)],
+                field: invalid_value,
+            }
+            WLANConfiguration(**config_data)

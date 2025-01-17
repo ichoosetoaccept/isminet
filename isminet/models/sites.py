@@ -23,22 +23,22 @@ class Site(BaseModel):
     def validate_name(cls, v: str) -> str:
         """
         Validate the site name by ensuring it is not an empty string.
-        
+
         Parameters:
             cls (type): The class calling the validator method
             v (str): The site name to validate
-        
+
         Returns:
             str: The validated site name
-        
+
         Raises:
             ValueError: If the site name is empty or contains only whitespace characters
-        
+
         Example:
             # Valid usage
             site_name = "My Network Site"
             validated_name = Site.validate_name(Site, site_name)  # Returns "My Network Site"
-        
+
             # Invalid usage
             site_name = "   "
             Site.validate_name(Site, site_name)  # Raises ValueError

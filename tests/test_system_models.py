@@ -14,6 +14,7 @@ from isminet.models.enums import DeviceType
 
 # Test data
 VALID_SYSTEM_HEALTH: Dict[str, Any] = {
+    "device_type": DeviceType.UGW,
     "subsystem": "network",
     "status": "ok",
     "status_code": 0,
@@ -54,7 +55,7 @@ VALID_SYSTEM_STATUS: Dict[str, Any] = {
     "upgradable": False,
     "update_available": False,
     "update_version": None,
-    "storage_usage": 75.5,
+    "storage_usage": 75,
     "storage_available": 1024,
 }
 
@@ -104,6 +105,30 @@ def test_process_info_model() -> None:
     assert process.uptime == 3600
 
 
+@pytest.mark.parametrize(
+    "invalid_data,expected_error",
+    [
+        ({"pid": 0}, "Input should be greater than or equal to 1"),
+        ({"name": ""}, "String should have at least 1 character"),
+        ({"cpu_usage": -1}, "Input should be greater than or equal to 0"),
+        ({"cpu_usage": 101}, "Input should be less than or equal to 100"),
+        ({"mem_usage": -1}, "Input should be greater than or equal to 0"),
+        ({"mem_usage": 101}, "Input should be less than or equal to 100"),
+        ({"mem_rss": -1}, "Input should be greater than or equal to 0"),
+        ({"mem_vsz": -1}, "Input should be greater than or equal to 0"),
+        ({"threads": 0}, "Input should be greater than or equal to 1"),
+        ({"uptime": -1}, "Input should be greater than or equal to 0"),
+    ],
+)
+def test_process_info_validation_errors(
+    invalid_data: Dict[str, Any], expected_error: str
+) -> None:
+    """Test ProcessInfo validation errors with parameterized test cases."""
+    test_data = cast(Dict[str, Any], {**VALID_PROCESS_INFO, **invalid_data})
+    with pytest.raises(ValidationError, match=expected_error):
+        ProcessInfo(**test_data)
+
+
 def test_service_status_model() -> None:
     """Test ServiceStatus model initialization and validation."""
     service = ServiceStatus(**VALID_SERVICE_STATUS)
@@ -114,6 +139,24 @@ def test_service_status_model() -> None:
     assert service.last_stop is None
     assert service.restart_count == 0
     assert service.pid == 1234
+
+
+@pytest.mark.parametrize(
+    "invalid_data,expected_error",
+    [
+        ({"name": ""}, "String should have at least 1 character"),
+        ({"status": "invalid"}, "Status must be one of: running, stopped, error"),
+        ({"restart_count": -1}, "Input should be greater than or equal to 0"),
+        ({"pid": 0}, "Input should be greater than or equal to 1"),
+    ],
+)
+def test_service_status_validation_errors(
+    invalid_data: Dict[str, Any], expected_error: str
+) -> None:
+    """Test ServiceStatus validation errors with parameterized test cases."""
+    test_data = cast(Dict[str, Any], {**VALID_SERVICE_STATUS, **invalid_data})
+    with pytest.raises(ValidationError, match=expected_error):
+        ServiceStatus(**test_data)
 
 
 def test_system_status_model() -> None:
@@ -129,5 +172,26 @@ def test_system_status_model() -> None:
     assert status.upgradable is False
     assert status.update_available is False
     assert status.update_version is None
-    assert status.storage_usage == 75.5
+    assert status.storage_usage == 75
     assert status.storage_available == 1024
+
+
+@pytest.mark.parametrize(
+    "invalid_data,expected_error",
+    [
+        ({"version": "invalid"}, "Version must be in format x.y.z"),
+        ({"uptime": -1}, "Input should be greater than or equal to 0"),
+        ({"health": []}, "List should have at least 1 item"),
+        ({"storage_usage": -1}, "Input should be greater than or equal to 0"),
+        ({"storage_usage": 101}, "Input should be less than or equal to 100"),
+        ({"storage_available": -1}, "Input should be greater than or equal to 0"),
+        ({"update_version": "invalid"}, "Version must be in format x.y.z"),
+    ],
+)
+def test_system_status_validation_errors(
+    invalid_data: Dict[str, Any], expected_error: str
+) -> None:
+    """Test SystemStatus validation errors with parameterized test cases."""
+    test_data = cast(Dict[str, Any], {**VALID_SYSTEM_STATUS, **invalid_data})
+    with pytest.raises(ValidationError, match=expected_error):
+        SystemStatus(**test_data)

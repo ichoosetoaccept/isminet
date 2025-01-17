@@ -4,9 +4,9 @@ from typing import Optional, Callable, Any
 from ipaddress import IPv4Address, IPv6Address
 import re
 from pydantic import Field
-from pydantic_core import PydanticCustomError
 
 MAC_PATTERN = re.compile(r"^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$")
+VERSION_PATTERN = re.compile(r"^\d+\.\d+\.\d+$")
 
 
 def validate_mac(v: Optional[str]) -> Optional[str]:
@@ -14,11 +14,7 @@ def validate_mac(v: Optional[str]) -> Optional[str]:
     if v is None:
         return None
     if not MAC_PATTERN.match(v):
-        raise PydanticCustomError(
-            "invalid_mac",
-            "Invalid MAC address format",
-            {},
-        )
+        raise ValueError("Invalid MAC address format")
     return v.lower()
 
 
@@ -37,15 +33,14 @@ def create_list_validator(
         invalid = []
         for value in v:
             try:
-                validator_func(transform_func(value))
-                validated.append(transform_func(value))
+                if not validator_func(transform_func(value)):
+                    invalid.append(value)
+                else:
+                    validated.append(transform_func(value))
             except (ValueError, TypeError):
                 invalid.append(value)
         if invalid:
-            raise PydanticCustomError(
-                error_type,
-                error_msg.format(values=", ".join(invalid)),
-            )
+            raise ValueError(error_msg)
         return validated
 
     return validator
@@ -55,42 +50,57 @@ def create_list_validator(
 validate_ip_list = create_list_validator(
     IPv4Address,
     "invalid_ip",
-    "Invalid IPv4 addresses: {values}",
+    "Invalid IPv4 address",
 )
 
 validate_ipv6_list = create_list_validator(
     IPv6Address,
     "invalid_ipv6",
-    "Invalid IPv6 addresses: {values}",
+    "Invalid IPv6 address",
 )
 
 validate_mac_list = create_list_validator(
     lambda x: bool(MAC_PATTERN.match(x)),
     "invalid_mac",
-    "Invalid MAC addresses: {values}",
+    "Invalid MAC address list",
     transform_func=str.lower,
 )
 
 
 def validate_ip(v: Optional[str]) -> Optional[str]:
-    """Validate IPv4 address format."""
+    """Validate IP address format (IPv4 or IPv6)."""
     if v is None:
         return None
     try:
+        # Try IPv4 first
         IPv4Address(v)
         return v
     except ValueError:
-        raise PydanticCustomError(
-            "invalid_ip",
-            "Invalid IPv4 address",
-            {},
-        )
+        try:
+            # Try IPv6 if IPv4 fails
+            IPv6Address(v)
+            return v
+        except ValueError:
+            raise ValueError("Invalid IPv4 address")
 
 
-def validate_version(v: str) -> str:
-    """Validate firmware version string."""
-    if not re.match(r"^\d+\.\d+\.\d+", v):
-        raise ValueError("Invalid version format")
+def validate_version(v: Optional[str]) -> Optional[str]:
+    """
+    Validate firmware version string.
+
+    Parameters:
+        v: The version string to validate (e.g. '1.2.3')
+
+    Returns:
+        str: The validated version string
+
+    Raises:
+        ValueError: If version format is invalid (must be in format X.Y.Z where X,Y,Z are integers)
+    """
+    if v is None:
+        return None
+    if not VERSION_PATTERN.match(v):
+        raise ValueError("Version must be in format x.y.z")
     return v
 
 

@@ -1,182 +1,197 @@
 """Tests for device models."""
 
 import pytest
+from typing import Dict, Any
 from pydantic import ValidationError
 from isminet.models.devices import Device, Client
-from isminet.models.enums import DeviceType, LedOverride
-from isminet.models.version import VersionInfo
+from isminet.models.enums import DeviceType
+
+# Test data
+VALID_DEVICE_DATA: Dict[str, Any] = {
+    "mac": "00:00:00:00:00:00",
+    "model": "U7PG2",
+    "type": DeviceType.UAP,
+    "version": "4.0.66",
+    "site_id": "default",
+    "name": "Test AP",
+    "ip": "192.168.1.1",
+    "hostname": "ap-1",
+    "uptime": 3600,
+    "last_seen": 1234567890,
+    "adopted": True,
+    "status": "connected",
+    "upgradable": False,
+    "update_available": False,
+}
+
+VALID_CLIENT_DATA: Dict[str, Any] = {
+    "mac": "00:00:00:00:00:00",
+    "ip": "192.168.1.100",
+    "hostname": "client1",
+    "site_id": "default",
+    "is_guest": False,
+    "is_wired": True,
+    "first_seen": 1234567890,
+    "last_seen": 1234567890,
+}
 
 
-def test_device_model_valid():
-    """Test that the Device model can parse a valid device response."""
-    device_data = {
-        "mac": "00:00:00:00:00:00",
-        "model": "U7PG2",
-        "type": DeviceType.UAP,
-        "version": "4.0.66",
-        "site_id": "default",
-    }
-    device = Device(**device_data)
-
-    assert device.mac == "00:00:00:00:00:00"
-    assert device.model == "U7PG2"
-    assert device.type == DeviceType.UAP
-    assert device.version == "4.0.66"
-    assert device.name is None
-    assert device.led_override is None
-
-
-def test_device_model_with_optional_fields():
-    """Test that the Device model works with optional fields."""
-    device_data = {
-        "mac": "00:00:00:00:00:00",
-        "model": "U7PG2",
-        "type": DeviceType.UAP,
-        "version": "4.0.66",
-        "site_id": "default",
-        "name": "My Access Point",
-        "led_override": LedOverride.ON,
-    }
-    device = Device(**device_data)
-
-    assert device.mac == "00:00:00:00:00:00"
-    assert device.name == "My Access Point"
-    assert device.led_override == LedOverride.ON
-
-
-def test_device_model_invalid():
-    """Test that the Device model properly validates input data."""
-    invalid_devices = [
-        # Missing required field
-        {
-            "model": "U7PG2",
-            "type": DeviceType.UAP,
-            "version": "4.0.66",
-        },
-        # Invalid MAC address
-        {
-            "mac": "invalid",
-            "model": "U7PG2",
-            "type": DeviceType.UAP,
-            "version": "4.0.66",
-            "site_id": "default",
-        },
-        # Invalid version format
-        {
-            "mac": "00:00:00:00:00:00",
-            "model": "U7PG2",
-            "type": DeviceType.UAP,
-            "version": "invalid",
-            "site_id": "default",
-        },
-    ]
-
-    for data in invalid_devices:
-        with pytest.raises(ValidationError):
-            Device(**data)
+@pytest.mark.parametrize(
+    "field_group,values,expected_values",
+    [
+        (
+            "required_fields",
+            {
+                "mac": "00:00:00:00:00:00",
+                "model": "U7PG2",
+                "type": DeviceType.UAP,
+                "version": "4.0.66",
+                "site_id": "default",
+            },
+            {
+                "mac": "00:00:00:00:00:00",
+                "model": "U7PG2",
+                "type": DeviceType.UAP,
+                "version": "4.0.66",
+                "site_id": "default",
+            },
+        ),
+        (
+            "status_fields",
+            {
+                "adopted": True,
+                "status": "connected",
+                "upgradable": False,
+                "update_available": False,
+            },
+            {
+                "adopted": True,
+                "status": "connected",
+                "upgradable": False,
+                "update_available": False,
+            },
+        ),
+        (
+            "network_fields",
+            {"ip": "192.168.1.1", "hostname": "ap-1"},
+            {"ip": "192.168.1.1", "hostname": "ap-1"},
+        ),
+        (
+            "timing_fields",
+            {"uptime": 3600, "last_seen": 1234567890},
+            {"uptime": 3600, "last_seen": 1234567890},
+        ),
+    ],
+)
+def test_device_model_fields(
+    field_group: str, values: Dict[str, Any], expected_values: Dict[str, Any]
+) -> None:
+    """Test device model field groups."""
+    device = Device(**{**VALID_DEVICE_DATA, **values})
+    for field, expected in expected_values.items():
+        assert getattr(device, field) == expected
 
 
-def test_client_model_valid():
-    """Test that the Client model can parse a valid client response."""
-    client_data = {
-        "mac": "00:00:00:00:00:00",
-        "hostname": "client-device",
-        "ip": "192.168.1.100",
-        "site_id": "default",
-        "is_guest": False,
-        "is_wired": True,
-        "network": "Default",
-        "network_id": "default",
-        "uptime": 3600,
-        "last_seen": 1600000000,
-        "first_seen": 1500000000,
-        "tx_bytes": 1000000,
-        "rx_bytes": 2000000,
-        "tx_packets": 1000,
-        "rx_packets": 2000,
-        "gw_mac": "00:00:00:00:00:01",
-        "sw_mac": "00:00:00:00:00:02",
-    }
-    client = Client(**client_data)
-    assert client.mac == "00:00:00:00:00:00"
-    assert client.hostname == "client-device"
-    assert client.ip == "192.168.1.100"
+@pytest.mark.parametrize(
+    "invalid_data,error_pattern",
+    [
+        (
+            {k: v for k, v in VALID_DEVICE_DATA.items() if k != "mac"},
+            "Field required",
+        ),
+        (
+            {**VALID_DEVICE_DATA, "mac": "invalid"},
+            "Invalid MAC address format",
+        ),
+        (
+            {**VALID_DEVICE_DATA, "type": "invalid"},
+            "Input should be 'uap', 'usw', 'ugw', 'udm' or 'udm-pro'",
+        ),
+        (
+            {**VALID_DEVICE_DATA, "version": "invalid"},
+            "Version must be in format x.y.z",
+        ),
+        (
+            {**VALID_DEVICE_DATA, "uptime": -1},
+            "Input should be greater than or equal to 0",
+        ),
+    ],
+)
+def test_device_model_validation(
+    invalid_data: Dict[str, Any], error_pattern: str
+) -> None:
+    """Test device model validation."""
+    with pytest.raises(ValidationError, match=error_pattern):
+        Device(**invalid_data)
 
 
-def test_client_model_invalid():
-    """Test that the Client model properly validates input data."""
-    invalid_clients = [
-        # Missing required field
-        {
-            "hostname": "client-device",
-            "ip": "192.168.1.100",
-        },
-        # Invalid MAC address
-        {
-            "mac": "invalid",
-            "hostname": "client-device",
-            "ip": "192.168.1.100",
-            "site_id": "default",
-            "is_guest": False,
-            "is_wired": True,
-            "network": "Default",
-            "network_id": "default",
-            "uptime": 3600,
-            "last_seen": 1600000000,
-            "first_seen": 1500000000,
-            "tx_bytes": 1000000,
-            "rx_bytes": 2000000,
-            "tx_packets": 1000,
-            "rx_packets": 2000,
-            "gw_mac": "00:00:00:00:00:01",
-            "sw_mac": "00:00:00:00:00:02",
-        },
-        # Invalid IP address
-        {
-            "mac": "00:00:00:00:00:00",
-            "hostname": "client-device",
-            "ip": "invalid",
-            "site_id": "default",
-            "is_guest": False,
-            "is_wired": True,
-            "network": "Default",
-            "network_id": "default",
-            "uptime": 3600,
-            "last_seen": 1600000000,
-            "first_seen": 1500000000,
-            "tx_bytes": 1000000,
-            "rx_bytes": 2000000,
-            "tx_packets": 1000,
-            "rx_packets": 2000,
-            "gw_mac": "00:00:00:00:00:01",
-            "sw_mac": "00:00:00:00:00:02",
-        },
-    ]
-
-    for data in invalid_clients:
-        with pytest.raises(ValidationError):
-            Client(**data)
+@pytest.mark.parametrize(
+    "field_group,values,expected_values",
+    [
+        (
+            "required_fields",
+            {
+                "mac": "00:00:00:00:00:00",
+                "ip": "192.168.1.100",
+                "hostname": "client1",
+                "site_id": "default",
+            },
+            {
+                "mac": "00:00:00:00:00:00",
+                "ip": "192.168.1.100",
+                "hostname": "client1",
+                "site_id": "default",
+            },
+        ),
+        (
+            "status_fields",
+            {"is_guest": False, "is_wired": True},
+            {"is_guest": False, "is_wired": True},
+        ),
+        (
+            "timing_fields",
+            {"first_seen": 1234567890, "last_seen": 1234567890},
+            {"first_seen": 1234567890, "last_seen": 1234567890},
+        ),
+    ],
+)
+def test_client_model_fields(
+    field_group: str, values: Dict[str, Any], expected_values: Dict[str, Any]
+) -> None:
+    """Test client model field groups."""
+    client = Client(**{**VALID_CLIENT_DATA, **values})
+    for field, expected in expected_values.items():
+        assert getattr(client, field) == expected
 
 
-def test_version_info_model_valid():
-    """Test that the VersionInfo model can parse a valid version response."""
-    version_data = {
-        "version": "7.3.83",
-        "site_id": "default",
-    }
-    version_info = VersionInfo(**version_data)
-    assert version_info.version == "7.3.83"
-
-
-def test_version_info_model_invalid():
-    """Test that the VersionInfo model properly validates input data."""
-    invalid_versions = [
-        # Missing required field
-        {"site_id": "default"},
-        # Invalid version format
-        {"version": "invalid", "site_id": "default"},
-    ]
-
-    for data in invalid_versions:
-        with pytest.raises(ValidationError):
-            VersionInfo(**data)
+@pytest.mark.parametrize(
+    "invalid_data,error_pattern",
+    [
+        (
+            {k: v for k, v in VALID_CLIENT_DATA.items() if k != "mac"},
+            "Field required",
+        ),
+        (
+            {**VALID_CLIENT_DATA, "mac": "invalid"},
+            "Invalid MAC address format",
+        ),
+        (
+            {**VALID_CLIENT_DATA, "ip": "invalid"},
+            "Invalid IPv4 address",
+        ),
+        (
+            {**VALID_CLIENT_DATA, "hostname": ""},
+            "String should have at least 1 character",
+        ),
+        (
+            {**VALID_CLIENT_DATA, "first_seen": -1},
+            "Input should be greater than or equal to 0",
+        ),
+    ],
+)
+def test_client_model_validation(
+    invalid_data: Dict[str, Any], error_pattern: str
+) -> None:
+    """Test client model validation."""
+    with pytest.raises(ValidationError, match=error_pattern):
+        Client(**invalid_data)

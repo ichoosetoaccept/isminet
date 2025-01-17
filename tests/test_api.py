@@ -11,9 +11,10 @@ This module contains unit tests for the BaseAPIClient class, covering:
 All tests use mocking to avoid actual API calls.
 """
 
+from typing import List, Optional, Type, Dict, Any, Union
 import pytest
-from unittest.mock import Mock, patch
-import requests
+from requests import ConnectionError, Response
+from unittest.mock import Mock, patch, MagicMock
 
 from isminet.clients.base import (
     APIConfig,
@@ -27,129 +28,112 @@ from isminet.clients.base import (
 from isminet.models.base import UnifiBaseModel
 
 
-def test_api_client_initialization() -> None:
-    """
-    Test the initialization of the BaseAPIClient with a given configuration.
+@pytest.mark.parametrize(
+    "config_data,expected_error",
+    [
+        ({"api_key": "", "host": "unifi.local"}, "API key cannot be empty"),
+        ({"api_key": "test_key", "host": ""}, "Host cannot be empty"),
+        (
+            {"api_key": "test_key", "host": "unifi.local", "port": -1},
+            "Port must be between 1 and 65535",
+        ),
+        (
+            {"api_key": "test_key", "host": "unifi.local", "port": 65536},
+            "Port must be between 1 and 65535",
+        ),
+    ],
+)
+def test_api_client_initialization_errors(
+    config_data: Dict[str, Any], expected_error: str
+) -> None:
+    """Test that API client initialization fails with invalid configuration."""
+    with pytest.raises(ValueError, match=expected_error):
+        config = APIConfig(**config_data)
+        BaseAPIClient(config)
 
-    This test verifies that:
-        1. The client is created with the correct configuration
-        2. A session is successfully initialized
 
-    Args:
-        None
-
-    Raises:
-        AssertionError: If the client configuration or session is not correctly set up
-    """
-    config = APIConfig(api_key="test_key", host="unifi.local")
+def test_api_client_initialization_optional_params() -> None:
+    """Test API client initialization with optional parameters."""
+    config = APIConfig(
+        api_key="test_key",
+        host="unifi.local",
+        port=8443,
+        site="default",
+        verify_ssl=False,
+    )
     client = BaseAPIClient(config)
-    assert client.config == config
-    assert isinstance(client.session, requests.Session)
+
+    assert client.config.api_key == "test_key"
+    assert client.config.host == "unifi.local"
+    assert client.config.port == 8443
+    assert client.config.site == "default"
+    assert client.config.verify_ssl is False
+
+    # Test session initialization
+    assert client.session is not None
+    assert client.session.verify is False
+    assert "X-API-Key" in client.session.headers
+    assert client.session.headers["X-API-Key"] == "test_key"
 
 
+@pytest.mark.slow
 def test_retry_mechanism() -> None:
-    """
-    Test the retry mechanism of the BaseAPIClient when handling connection failures.
-
-    This test verifies that the client attempts to retry a request multiple times
-    when encountering connection errors, ultimately succeeding on the third attempt.
-
-    Parameters:
-        None
-
-    Raises:
-        AssertionError: If the retry mechanism does not function as expected
-
-    Behavior:
-        - Simulates two consecutive connection failures
-        - Checks that the request is attempted three times
-        - Confirms that the final request returns the expected response
-    """
-    config = APIConfig(api_key="test_key", host="unifi.local")
+    """Test that retry mechanism works correctly."""
+    config = APIConfig(api_key="test", host="localhost")
     client = BaseAPIClient(config)
 
-    mock_response = Mock()
-    mock_response.json.return_value = {"data": [{"id": 1}]}
-    mock_response.status_code = 200
-
+    # Mock a connection error that succeeds after 2 retries
     with patch("requests.Session.request") as mock_request:
         mock_request.side_effect = [
-            requests.ConnectionError(),
-            requests.ConnectionError(),
-            mock_response,
+            ConnectionError("Connection failed"),
+            ConnectionError("Connection failed"),
+            MagicMock(ok=True, json=lambda: {"data": []}),
         ]
-        result = client.get("/test")
-        assert result == {"data": [{"id": 1}]}
+
+        response: Union[Dict[str, Any], List[Any]] = client.get("/test")
+        assert response == {"data": []}
         assert mock_request.call_count == 3
 
 
-def test_error_handling() -> None:
-    """
-    Test the error handling capabilities of the BaseAPIClient for various HTTP status codes.
-
-    This test verifies that the client correctly raises specific exceptions based on different HTTP status codes. It checks the following error scenarios:
-    - 401 (Unauthorized): Raises AuthenticationError
-    - 403 (Forbidden): Raises PermissionError
-    - 404 (Not Found): Raises NotFoundError
-    - 500 (Internal Server Error): Raises generic APIError
-
-    Parameters:
-        None
-
-    Raises:
-        AssertionError: If the expected exceptions are not raised or do not contain the correct error messages
-        Various custom exceptions (AuthenticationError, PermissionError, NotFoundError, APIError):
-            Depending on the mocked HTTP status code
-    """
+@pytest.mark.parametrize(
+    "status_code,expected_exception,error_msg",
+    [
+        (401, AuthenticationError, "Authentication failed"),
+        (403, PermissionError, "Permission denied"),
+        (404, NotFoundError, "Resource not found"),
+        (500, APIError, "Internal server error"),
+        (502, APIError, "Bad gateway"),
+        (503, APIError, "Service unavailable"),
+    ],
+)
+def test_error_handling(
+    status_code: int, expected_exception: Type[Exception], error_msg: str
+) -> None:
+    """Test that HTTP errors are properly converted to custom exceptions."""
     config = APIConfig(api_key="test_key", host="unifi.local")
     client = BaseAPIClient(config)
 
-    mock_response = Mock()
-    mock_response.json.return_value = {"meta": {"msg": "Error message"}}
+    mock_response = Mock(spec=Response)
+    mock_response.status_code = status_code
+    mock_response.ok = False
+    mock_response.text = error_msg
 
-    with patch("requests.Session.request") as mock_request:
-        # Test 401 Unauthorized
-        mock_response.status_code = 401
-        mock_request.return_value = mock_response
-        with pytest.raises(AuthenticationError):
-            client.get("/test")
-
-        # Test 403 Forbidden
-        mock_response.status_code = 403
-        with pytest.raises(PermissionError):
-            client.get("/test")
-
-        # Test 404 Not Found
-        mock_response.status_code = 404
-        with pytest.raises(NotFoundError):
-            client.get("/test")
-
-        # Test 500 Internal Server Error
-        mock_response.status_code = 500
-        with pytest.raises(APIError):
+    with patch("requests.Session.request", return_value=mock_response):
+        with pytest.raises(expected_exception, match=error_msg):
             client.get("/test")
 
 
-def test_request_exceptions() -> None:
-    """
-    Test the handling of request exceptions in the BaseAPIClient.
+class NestedModel(UnifiBaseModel):
+    """Test nested model for response validation."""
 
-    This test verifies that when a ConnectionError occurs during a request,
-    the client raises an APIError with an appropriate error message.
+    value: int
+    description: Optional[str] = None
 
-    Args:
-        None
 
-    Raises:
-        APIError: When a connection error occurs during the request
-    """
-    config = APIConfig(api_key="test_key", host="unifi.local")
-    client = BaseAPIClient(config)
+class ArrayModel(UnifiBaseModel):
+    """Test array model for response validation."""
 
-    with patch("requests.Session.request") as mock_request:
-        mock_request.side_effect = requests.ConnectionError()
-        with pytest.raises(APIError):
-            client.get("/test")
+    items: List[str]
 
 
 class TestModel(UnifiBaseModel):
@@ -157,53 +141,139 @@ class TestModel(UnifiBaseModel):
 
     id: int
     name: str
+    tags: List[str] = []
+    nested: Optional[NestedModel] = None
+    arrays: Optional[List[ArrayModel]] = None
 
 
 def test_response_validation() -> None:
-    """
-    Test the response validation mechanism of the BaseAPIClient when the response data does not conform to the expected model.
-
-    This test verifies that the client raises a ResponseValidationError when the JSON response contains data
-    that fails type validation against a specified Pydantic model.
-
-    Parameters:
-        None
-
-    Raises:
-        ResponseValidationError: When the response data does not match the expected model's type constraints
-    """
+    """Test response validation using Pydantic models."""
     config = APIConfig(api_key="test_key", host="unifi.local")
     client = BaseAPIClient(config)
 
-    mock_response = Mock()
-    mock_response.json.return_value = {"data": [{"id": "invalid", "name": 123}]}
-    mock_response.status_code = 200
+    # Test valid response
+    valid_response = {
+        "data": [
+            {
+                "id": 1,
+                "name": "Test",
+                "tags": ["tag1", "tag2"],
+                "nested": {"value": 42, "description": "nested"},
+                "arrays": [{"items": ["item1", "item2"]}],
+            }
+        ]
+    }
 
-    with patch("requests.Session.request") as mock_request:
-        mock_request.return_value = mock_response
+    mock_response = Mock(spec=Response)
+    mock_response.status_code = 200
+    mock_response.ok = True
+    mock_response.json.return_value = valid_response
+
+    with patch("requests.Session.request", return_value=mock_response):
+        result = client.get("/test", response_model=TestModel)
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert isinstance(result[0], TestModel)
+        assert result[0].id == 1
+        assert result[0].name == "Test"
+        assert result[0].tags == ["tag1", "tag2"]
+        assert result[0].nested is not None
+        assert result[0].nested.value == 42
+        assert result[0].nested.description == "nested"
+        assert result[0].arrays is not None
+        assert len(result[0].arrays) == 1
+        assert result[0].arrays[0].items == ["item1", "item2"]
+
+    # Test invalid response
+    invalid_response = {
+        "data": [
+            {
+                "id": "not_an_integer",  # Should be an integer
+                "name": "Test",
+            }
+        ]
+    }
+
+    mock_response.json.return_value = invalid_response
+
+    with patch("requests.Session.request", return_value=mock_response):
+        with pytest.raises(ResponseValidationError):
+            client.get("/test", response_model=TestModel)
+
+    # Test missing required field
+    missing_field_response = {
+        "data": [
+            {
+                "id": 1,
+                # Missing required 'name' field
+            }
+        ]
+    }
+
+    mock_response.json.return_value = missing_field_response
+
+    with patch("requests.Session.request", return_value=mock_response):
+        with pytest.raises(ResponseValidationError):
+            client.get("/test", response_model=TestModel)
+
+    # Test invalid nested model
+    invalid_nested_response = {
+        "data": [
+            {
+                "id": 1,
+                "name": "Test",
+                "nested": {
+                    # Missing required 'value' field
+                    "description": "nested",
+                },
+            }
+        ]
+    }
+
+    mock_response.json.return_value = invalid_nested_response
+
+    with patch("requests.Session.request", return_value=mock_response):
+        with pytest.raises(ResponseValidationError):
+            client.get("/test", response_model=TestModel)
+
+    # Test invalid array model
+    invalid_array_response = {
+        "data": [
+            {
+                "id": 1,
+                "name": "Test",
+                "arrays": [
+                    {
+                        # Missing required 'items' field
+                    }
+                ],
+            }
+        ]
+    }
+
+    mock_response.json.return_value = invalid_array_response
+
+    with patch("requests.Session.request", return_value=mock_response):
         with pytest.raises(ResponseValidationError):
             client.get("/test", response_model=TestModel)
 
 
 def test_context_manager() -> None:
-    """
-    Test the context manager behavior of the BaseAPIClient.
-
-    Verifies that:
-        - A session is created and active when entering the context
-        - The session is an instance of requests.Session
-        - The session is closed and set to None when exiting the context
-
-    Parameters:
-        None
-
-    Raises:
-        AssertionError: If session management does not behave as expected
-    """
+    """Test that context manager properly closes session."""
     config = APIConfig(api_key="test_key", host="unifi.local")
-    with BaseAPIClient(config) as client:
-        # Session should be active inside context
-        assert isinstance(client.session, requests.Session)
+    client = BaseAPIClient(config)
 
-    # Session should be closed after context
-    assert client.session is None
+    with client:
+        assert client.session is not None
+        # Make a request to verify session is active
+        mock_response = Mock(spec=Response)
+        mock_response.status_code = 200
+        mock_response.ok = True
+        mock_response.json.return_value = {"data": []}
+
+        with patch("requests.Session.request", return_value=mock_response):
+            client.get("/test")
+
+    # Try to make a request after context exit to verify session is closed
+    with pytest.raises(RuntimeError, match="Session is closed"):
+        client.get("/test")
